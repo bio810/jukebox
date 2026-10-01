@@ -145,7 +145,6 @@
       box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
     }
 
-    /* 隱匿模式架構 */
     .stealth-element {
       display: none !important;
     }
@@ -426,7 +425,7 @@
       cursor: pointer;
     }
 
-    /* 防竄改強制自鎖 (Style C) */
+    /* 防竄改強制自鎖 */
     .tamper-lockdown-overlay {
       position: fixed;
       inset: 0;
@@ -591,7 +590,7 @@
     .btn-add-list { background: #6366f1; padding: 6px 9px; font-size: 0.75rem; }
     .btn-skip { background: #2563eb; padding: 7px 13px; font-size: 0.82rem; }
 
-    /* 影音主舞台 (徹底解決 Error 153 與畫面未連動) */
+    /* 影音主舞台 */
     .ktv-stage {
       position: relative;
       width: 100%;
@@ -666,23 +665,28 @@
       text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
     }
 
-    /* 手機 4G 自動播放受阻時的解鎖按鈕 */
-    .btn-mobile-sync-unlock {
-      background: linear-gradient(135deg, #00f3ff, #ff007f);
-      color: #0b0b12;
-      font-size: 0.85rem;
-      font-weight: 800;
-      padding: 8px 18px;
-      border-radius: 20px;
-      cursor: pointer;
-      box-shadow: 0 4px 15px rgba(0, 243, 255, 0.4);
-      animation: pulseBtn 1.8s infinite;
+    /* 手機 4G 解鎖音效按鈕 */
+    .guest-sound-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      display: flex;
+      gap: 8px;
     }
 
-    @keyframes pulseBtn {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.05); }
-      100% { transform: scale(1); }
+    .btn-guest-audio-unmute {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 7px 18px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .btn-fullscreen {
@@ -1545,7 +1549,7 @@
   </style>
 </head>
 <body class="mode-ktv">
-  <!-- 純淨投影副螢幕視圖 (Role = stage) -->
+  <!-- 純淨投影副螢幕視圖 -->
   <div id="pure-stage-view" class="pure-stage-view hidden">
     <div id="pure-stage-media-wrap" class="pure-stage-wrapper">
       <div id="stage-yt-player"></div>
@@ -1554,7 +1558,7 @@
     <div id="stage-marquee-layer" class="marquee-layer"></div>
   </div>
 
-  <!-- 手持專用高對比提詞器面板 (Prompter View) -->
+  <!-- 手持專用高對比提詞器面板 -->
   <div id="prompter-overlay" class="prompter-overlay hidden">
     <div class="prompter-header">
       <div class="prompter-pacing-box">
@@ -1576,7 +1580,7 @@
     </div>
   </div>
 
-  <!-- 防竄改強制熔斷警示遮罩 (Style C) -->
+  <!-- 防竄改強制熔斷警示遮罩 -->
   <div id="tamper-lockdown-overlay" class="tamper-lockdown-overlay hidden">
     <div class="tamper-card">
       <h2 class="tamper-title">⚠️ 名號不可改，底線不能碰。</h2>
@@ -1624,7 +1628,7 @@
             🎙️ 提詞器
           </button>
           <button id="btn-open-stage" class="btn-header-tool admin-only stealth-element" title="彈出乾淨投影副螢幕視窗">
-            🖥️️ 投影副螢幕
+            🖥 投影副螢幕
           </button>
           <button id="btn-open-qr" class="btn-header-tool btn-share-qr admin-only" title="產生手機親友專屬掃描碼">
             📱 掃碼同步
@@ -1692,22 +1696,24 @@
       <div id="search-results" class="search-results hidden"></div>
     </section>
 
-    <!-- 上方：影音主舞台 (徹底解決 Error 153 與畫面未連動) -->
+    <!-- 上方：影音主舞台 (支援靜音自動播放與手動解除) -->
     <main class="main-stage">
       <div id="ktv-stage" class="ktv-stage">
         <div class="player-wrapper">
-          <!-- 播放器維持在 DOM 中保證維度計算正常 -->
           <div id="yt-player"></div>
 
-          <!-- 待機黑膠唱片浮層 (未起播時遮蓋，播放時淡出隱藏) -->
+          <!-- 待機黑膠唱片浮層 -->
           <div id="standby-display" class="standby-display">
             <div class="vinyl-disc">
               <div class="vinyl-label">🎵</div>
             </div>
             <div class="standby-tip" id="standby-tip">點唱機就緒待命，請在上方搜尋點歌...</div>
-            <!-- 手機端防呆解鎖按鈕 (若手機 4G 阻擋自動播放時出現) -->
-            <button id="btn-mobile-sync-unlock" class="btn-mobile-sync-unlock hidden">
-              ▶ 點擊加入影音同步視聽 🎵
+          </div>
+
+          <!-- 客端手機專屬解鎖聲音按鈕 -->
+          <div id="guest-sound-bar" class="guest-sound-bar hidden">
+            <button id="btn-guest-unmute" class="btn-guest-audio-unmute">
+              🔊 點此同步開啟手機聲音
             </button>
           </div>
         </div>
@@ -1925,7 +1931,7 @@
     }
 
     // ====================================================
-    // B. 免伺服器跨手機 MQTT 雲端總線整合 (強化連線與初始同步)
+    // B. 免伺服器跨手機 MQTT 雲端總線整合 (強化連線與心跳同步)
     // ====================================================
     const stageBus = new BroadcastChannel("ceremony_stage_bus");
 
@@ -1941,10 +1947,13 @@
     let mqttClient = null;
     const MQTT_BROKER = "wss://broker.emqx.io:8084/mqtt";
     const MQTT_TOPIC_SYNC = `jukebox/${currentRoomId}/sync`;
+    const MQTT_TOPIC_CMD = `jukebox/${currentRoomId}/cmd`;
     const MQTT_TOPIC_BULLET = `jukebox/${currentRoomId}/bullet`;
     const MQTT_TOPIC_REQ = `jukebox/${currentRoomId}/req`;
 
     const mqttStatusDot = document.getElementById("mqtt-status-dot");
+    const guestSoundBar = document.getElementById("guest-sound-bar");
+    const btnGuestUnmute = document.getElementById("btn-guest-unmute");
 
     try {
       mqttClient = mqtt.connect(MQTT_BROKER, {
@@ -1956,37 +1965,44 @@
 
       mqttClient.on("connect", () => {
         if (mqttStatusDot) mqttStatusDot.textContent = "🟢";
-        console.log("MQTT 雲端總線已連接，房號：", currentRoomId);
-        mqttClient.subscribe([MQTT_TOPIC_SYNC, MQTT_TOPIC_BULLET, MQTT_TOPIC_REQ]);
+        mqttClient.subscribe([MQTT_TOPIC_SYNC, MQTT_TOPIC_CMD, MQTT_TOPIC_BULLET, MQTT_TOPIC_REQ]);
 
-        // 若是客端手機剛進來，主動向雲端索取當前主控端的曲目
+        // 新進客端主動請求目前進度
         if (isGuestMode) {
           mqttClient.publish(MQTT_TOPIC_REQ, JSON.stringify({ type: "ASK_CURRENT" }), { qos: 0 });
         }
       });
 
-      mqttClient.on("reconnect", () => {
-        if (mqttStatusDot) mqttStatusDot.textContent = "🟡";
-      });
-
-      mqttClient.on("offline", () => {
-        if (mqttStatusDot) mqttStatusDot.textContent = "🔴";
-      });
+      mqttClient.on("reconnect", () => { if (mqttStatusDot) mqttStatusDot.textContent = "🟡"; });
+      mqttClient.on("offline", () => { if (mqttStatusDot) mqttStatusDot.textContent = "🔴"; });
 
       mqttClient.on("message", (topic, message) => {
         try {
           const data = JSON.parse(message.toString());
           if (topic === MQTT_TOPIC_SYNC) {
-            // 親友手機收到主控同步：更新文字＋喚醒播放器
+            // 親友手機收到同步：更新文字＋以靜音策略喚醒播放器
             if (isGuestMode && data.track) {
+              const isDifferentTrack = !currentTrack || currentTrack.id !== data.track.id;
               currentTrack = data.track;
               updateShowcase(data.track, false);
-              syncPlayGuestTrack(data.track.id);
+
+              if (isDifferentTrack) {
+                syncPlayGuestTrack(data.track.id, data.currentTime || 0);
+              }
+            }
+          } else if (topic === MQTT_TOPIC_CMD) {
+            // 收到主控端的播放/暫停/跳轉指令
+            if (isGuestMode && player && isPlayerReady) {
+              if (data.command === "play") player.playVideo();
+              if (data.command === "pause") player.pauseVideo();
+              if (data.command === "seek" && data.time) player.seekTo(data.time, true);
             }
           } else if (topic === MQTT_TOPIC_REQ) {
-            // 主控端收到新客端索取進度請求，立刻回傳當前曲目
+            // 主控端收到進度索取，立即回傳當前曲目與播放秒數
             if (!isGuestMode && currentTrack) {
-              broadcastCloudSync(currentTrack);
+              const currSec = (player && isPlayerReady && typeof player.getCurrentTime === "function") 
+                ? player.getCurrentTime() : 0;
+              broadcastCloudSync(currentTrack, currSec);
             }
           } else if (topic === MQTT_TOPIC_BULLET) {
             spawnMarquee(data.text, false);
@@ -1999,9 +2015,15 @@
       console.warn("MQTT 初始化失敗：", e);
     }
 
-    function broadcastCloudSync(track) {
+    function broadcastCloudSync(track, currentTime = 0) {
       if (mqttClient && mqttClient.connected) {
-        mqttClient.publish(MQTT_TOPIC_SYNC, JSON.stringify({ track }), { qos: 0 });
+        mqttClient.publish(MQTT_TOPIC_SYNC, JSON.stringify({ track, currentTime }), { qos: 0 });
+      }
+    }
+
+    function broadcastCloudCmd(command, extra = {}) {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC_CMD, JSON.stringify({ command, ...extra }), { qos: 0 });
       }
     }
 
@@ -2011,19 +2033,37 @@
       }
     }
 
-    // 客端手機專用：嘗試播放或提示點擊解鎖聲音
-    function syncPlayGuestTrack(videoId) {
+    // 主控端心跳定時廣播 (每 3 秒自動同步當前秒數，確保新加入的手機零等待)
+    setInterval(() => {
+      if (!isGuestMode && currentTrack && player && isPlayerReady) {
+        const currSec = player.getCurrentTime();
+        broadcastCloudSync(currentTrack, currSec);
+      }
+    }, 3000);
+
+    // 客端手機專用：先以 Mute 靜音繞過 4G 限制啟動播放，並顯示解鎖按鈕
+    function syncPlayGuestTrack(videoId, startSeconds = 0) {
       activatePlayer(videoId);
-      if (player && typeof player.playVideo === "function") {
+      if (player && isPlayerReady) {
         try {
+          player.mute(); // 關鍵：靜音狀態下瀏覽器必定允許自動起播
+          player.loadVideoById({ videoId: videoId, startSeconds: startSeconds });
           player.playVideo();
+          if (guestSoundBar) guestSoundBar.classList.remove("hidden");
         } catch (err) {
-          console.warn("手機 4G 瀏覽器攔截自動播放：", err);
-          const unlockBtn = document.getElementById("btn-mobile-sync-unlock");
-          if (unlockBtn) unlockBtn.classList.remove("hidden");
+          console.warn("手機播放器載入被攔截：", err);
         }
       }
     }
+
+    btnGuestUnmute.onclick = () => {
+      if (player && isPlayerReady) {
+        player.unMute();
+        player.setVolume(100);
+        guestSoundBar.classList.add("hidden");
+        showHUD("🔊 已開啟手機同步聲音！");
+      }
+    };
 
     // ====================================================
     // C. 範本資料庫
@@ -2078,10 +2118,8 @@
     // ====================================================
     // D. 起始狀態設定
     // ====================================================
-    const urlParams = new URLSearchParams(window.location.search);
     const roleParam = urlParams.get("role");
     const isStageRole = roleParam === "stage";
-    const isGuestMode = urlParams.get("guest") === "true";
     const initialMode = urlParams.get("mode") || "ktv";
 
     let currentMode = initialMode;
@@ -2116,8 +2154,6 @@
 
     // DOM 快取
     const standbyDisplay = document.getElementById("standby-display");
-    const standbyTip = document.getElementById("standby-tip");
-    const btnMobileSyncUnlock = document.getElementById("btn-mobile-sync-unlock");
     const pureStageView = document.getElementById("pure-stage-view");
     const stagePhotoDisplay = document.getElementById("stage-photo-display");
     const stageMarqueeLayer = document.getElementById("stage-marquee-layer");
@@ -2268,15 +2304,6 @@
       }
       return false;
     }
-
-    // 手機端點擊解鎖影音播放
-    btnMobileSyncUnlock.onclick = () => {
-      btnMobileSyncUnlock.classList.add("hidden");
-      if (player && typeof player.playVideo === "function") {
-        player.playVideo();
-        showHUD("🎵 影音同步已連線！");
-      }
-    };
 
     // ====================================================
     // F. 雙端通訊處理
@@ -2485,6 +2512,7 @@
           clearInterval(interval);
           player.pauseVideo();
           broadcastToStage("PLAYER_COMMAND", { command: "pause" });
+          broadcastCloudCmd("pause");
           player.setVolume(startVol);
           showHUD("⏸ 已淡出暫停");
         }
@@ -2652,7 +2680,7 @@
     }
 
     // ====================================================
-    // K. QR Code 產生 (含專屬 MQTT 同步房號)
+    // K. QR Code 產生
     // ====================================================
     function generateGuestQRCode() {
       const currentUrl = new URL(window.location.href);
@@ -2707,7 +2735,7 @@
     };
 
     // ====================================================
-    // L. 本地暫存與啟動初始化 (內建示範歌曲防呆)
+    // L. 本地暫存與啟動初始化
     // ====================================================
     function loadSavedData() {
       if (!verifySystemIntegrity()) {
@@ -2989,7 +3017,7 @@
       } else {
         btnSwitchJson.style.borderColor = "var(--accent)";
         btnSwitchJson.style.color = "var(--accent)";
-        btnSwitchJson.style.borderColor = "#36364e";
+        btnSwitchMd.style.borderColor = "#36364e";
         btnSwitchMd.style.color = "#d1d1e0";
         exportPreviewArea.value = JSON.stringify(activeExportingPlaylist, null, 2);
       }
@@ -3095,7 +3123,7 @@
     });
 
     // ====================================================
-    // P. YouTube 播放器整合 (修復 Error 153 與遮罩未關閉問題)
+    // P. YouTube 播放器整合
     // ====================================================
     window.onYouTubeIframeAPIReady = function () {
       const playerOptions = {
@@ -3144,10 +3172,7 @@
     };
 
     function activatePlayer(videoId) {
-      // 關鍵修復：點播或同步時，強制隱藏黑膠唱片浮層
       if (standbyDisplay) standbyDisplay.style.display = "none";
-      if (btnMobileSyncUnlock) btnMobileSyncUnlock.classList.add("hidden");
-
       if (player && typeof player.loadVideoById === "function") {
         player.loadVideoById(videoId);
       }
@@ -3187,7 +3212,9 @@
 
       broadcastToStage("SYNC_TRACK", { track });
       if (shouldBroadcast) {
-        broadcastCloudSync(track);
+        const currSec = (player && isPlayerReady && typeof player.getCurrentTime === "function") 
+          ? player.getCurrentTime() : 0;
+        broadcastCloudSync(track, currSec);
       }
     }
 
@@ -3573,7 +3600,7 @@
     });
 
     // ====================================================
-    // U. 鍵盤快捷鍵 (含老闆防窺鍵 Esc)
+    // U. 鍵盤快捷鍵
     // ====================================================
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -3593,10 +3620,12 @@
           if (player.getPlayerState() === YT.PlayerState.PLAYING) {
             player.pauseVideo();
             broadcastToStage("PLAYER_COMMAND", { command: "pause" });
+            broadcastCloudCmd("pause");
             showHUD("⏸ 暫停");
           } else {
             player.playVideo();
             broadcastToStage("PLAYER_COMMAND", { command: "play" });
+            broadcastCloudCmd("play");
             showHUD("▶ 播放");
           }
           break;
@@ -3607,7 +3636,9 @@
           break;
         case "ArrowLeft":
           e.preventDefault();
-          player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
+          const targetTime = Math.max(0, player.getCurrentTime() - 10);
+          player.seekTo(targetTime, true);
+          broadcastCloudCmd("seek", { time: targetTime });
           showHUD("⏪ 倒退 10 秒");
           break;
         case "ArrowUp":
