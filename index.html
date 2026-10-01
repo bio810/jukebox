@@ -1,0 +1,3544 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>復古線上點唱機</title>
+  <!-- 免伺服器跨手機 MQTT 即時通訊總線 -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- 離線 QR Code 生成器 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #0b0b12;
+      --card-bg: #161622;
+      --card-sub: #1f1f30;
+      --primary: #ff007f;
+      --primary-hover: #e00070;
+      --accent: #00f3ff;
+      --accent-hover: #00c7d1;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --success: #10b981;
+      --gold: #ffd700;
+      --text-main: #f1f1fc;
+      --text-muted: #8b8ba4;
+      --border-color: #2a2a3e;
+      --mode-color: #ff007f;
+    }
+
+    body.mode-ktv {
+      --mode-color: #ff007f;
+      --accent: #00f3ff;
+      --card-bg: #161622;
+      --card-sub: #1f1f30;
+      --border-color: #2a2a3e;
+    }
+
+    body.mode-classroom {
+      --mode-color: #3b82f6;
+      --accent: #10b981;
+      --card-bg: #131b2e;
+      --card-sub: #1a253e;
+      --border-color: #233554;
+    }
+
+    body.mode-ceremony {
+      --mode-color: #f59e0b;
+      --accent: #ffd700;
+      --card-bg: #1b1712;
+      --card-sub: #272118;
+      --border-color: #423624;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      padding: 14px 10px 32px;
+      min-height: 100vh;
+      overflow-x: hidden;
+      transition: background-color 0.3s ease;
+    }
+
+    .jukebox-container {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 頂部導航 */
+    .header {
+      position: relative;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-top-row {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .system-title-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+    }
+
+    .system-title {
+      font-size: 1.55rem;
+      letter-spacing: 1.2px;
+      color: var(--mode-color);
+      text-shadow: 0 0 16px rgba(255, 255, 255, 0.2);
+      transition: color 0.3s;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-header-tool {
+      background: var(--card-sub);
+      border: 1px solid var(--border-color);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+
+    .btn-header-tool:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-share-qr {
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+    }
+
+    /* 隱匿模式架構 (暗門開啟時才顯現) */
+    .stealth-element {
+      display: none !important;
+    }
+
+    body.stealth-unlocked .stealth-element {
+      display: flex !important;
+    }
+
+    .mode-nav-bar {
+      background: #11111a;
+      border: 1px solid var(--border-color);
+      padding: 4px;
+      border-radius: 12px;
+      gap: 4px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 8px 4px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.25s ease;
+    }
+
+    .mode-btn:hover { color: #fff; }
+    .mode-btn.active {
+      background: var(--card-sub);
+      color: #fff;
+      border: 1px solid var(--mode-color);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    .guest-badge {
+      display: inline-block;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--success);
+      color: var(--success);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 12px;
+    }
+
+    body.is-guest .admin-only {
+      display: none !important;
+    }
+
+    /* 典禮助手面板 */
+    .ceremony-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .ceremony-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .template-selector-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .template-select {
+      flex: 1;
+      background: var(--card-sub);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--gold);
+      padding: 8px 12px;
+      font-size: 0.86rem;
+      font-weight: bold;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn-apply-template {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      color: #fff;
+      padding: 8px 14px;
+      font-size: 0.82rem;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+
+    .audio-sfx-bar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .btn-audio-ctrl {
+      background: var(--card-sub);
+      border: 1px solid var(--border-color);
+      color: #e2e8f0;
+      padding: 7px 11px;
+      font-size: 0.78rem;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+
+    .btn-audio-ctrl:hover { border-color: var(--gold); color: #fff; }
+    .btn-audio-ctrl.active {
+      background: var(--warning);
+      color: #000;
+      font-weight: bold;
+      border-color: var(--gold);
+    }
+
+    /* 開機鎖定 (bio810) */
+    .boot-overlay {
+      position: fixed;
+      inset: 0;
+      background: #08080d;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+
+    .boot-card {
+      background: rgba(22, 22, 34, 0.96);
+      border: 1px solid #3d3d58;
+      border-radius: 16px;
+      padding: 34px 26px;
+      width: 90%;
+      max-width: 390px;
+      text-align: center;
+      box-shadow: 0 16px 45px rgba(0, 0, 0, 0.9), 0 0 24px rgba(255, 0, 127, 0.25);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+
+    .boot-card h2 {
+      font-size: 1.45rem;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .boot-card p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 22px;
+    }
+
+    .boot-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .boot-input-group input {
+      padding: 13px 16px;
+      background: #101018;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1.15rem;
+      text-align: center;
+      outline: none;
+      letter-spacing: 3px;
+    }
+
+    .boot-input-group input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 14px rgba(255, 0, 127, 0.35);
+    }
+
+    .btn-boot-unlock {
+      background: linear-gradient(135deg, var(--primary), #8b5cf6);
+      color: #fff;
+      padding: 13px;
+      font-size: 1rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .boot-error {
+      color: var(--danger);
+      font-size: 0.82rem;
+      margin-top: 10px;
+    }
+
+    .celebration-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      pointer-events: auto;
+    }
+
+    #fireworks-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .celebration-content {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 20px;
+      animation: zoomInBounce 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes zoomInBounce {
+      0% { opacity: 0; transform: scale(0.35); }
+      70% { opacity: 1; transform: scale(1.08); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .hero-title {
+      font-size: 3.2rem;
+      font-weight: 900;
+      color: #fffb00;
+      text-shadow: 
+        0 0 12px rgba(255, 251, 0, 0.95),
+        0 0 28px rgba(255, 0, 127, 0.9),
+        0 0 50px rgba(0, 243, 255, 0.85);
+      letter-spacing: 5px;
+      margin-bottom: 14px;
+    }
+
+    .hero-subtitle {
+      font-size: 1.15rem;
+      color: #00f3ff;
+      text-shadow: 0 0 10px rgba(0, 243, 255, 0.7);
+      margin-bottom: 26px;
+      letter-spacing: 2px;
+    }
+
+    .btn-enter-app {
+      background: linear-gradient(90deg, #ff007f, #ffd700);
+      color: #0b0b12;
+      font-size: 1.1rem;
+      font-weight: 800;
+      padding: 13px 36px;
+      border-radius: 30px;
+      box-shadow: 0 6px 28px rgba(255, 0, 127, 0.65);
+      cursor: pointer;
+    }
+
+    /* 防竄改強制自鎖 (Style C) */
+    .tamper-lockdown-overlay {
+      position: fixed;
+      inset: 0;
+      background: #050508;
+      z-index: 99999999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .tamper-card {
+      background: rgba(22, 10, 15, 0.98);
+      border: 2px solid var(--danger);
+      border-radius: 14px;
+      padding: 34px 28px;
+      width: 100%;
+      max-width: 490px;
+      text-align: center;
+      box-shadow: 0 0 50px rgba(239, 68, 68, 0.5);
+    }
+
+    .tamper-title {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: var(--danger);
+      margin-bottom: 16px;
+      letter-spacing: 2px;
+    }
+
+    .tamper-content {
+      font-size: 1.05rem;
+      line-height: 1.8;
+      color: #f1f1fc;
+      white-space: pre-line;
+      margin-bottom: 20px;
+    }
+
+    .tamper-badge {
+      display: inline-block;
+      border: 1px solid #552222;
+      color: #aa5555;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    /* 搜尋輸入區 */
+    .search-section {
+      position: relative;
+      width: 100%;
+    }
+
+    .search-bar {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-bar input {
+      width: 100%;
+      padding: 13px 44px 13px 14px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-bar input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(0, 243, 255, 0.25);
+    }
+
+    .spinner {
+      position: absolute;
+      right: 14px;
+      font-size: 1rem;
+    }
+
+    .hidden { display: none !important; }
+
+    .search-results {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      background: #141420;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      max-height: 360px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .search-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #202030;
+      transition: background 0.15s;
+    }
+
+    .search-item:hover { background: var(--card-sub); }
+
+    .search-item img {
+      width: 68px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 4px;
+      flex-shrink: 0;
+      background: #000;
+    }
+
+    .search-item-info {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .search-item-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-main);
+    }
+
+    .search-item-channel {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .search-item-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    button {
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:hover { opacity: 0.9; }
+    button:active { transform: scale(0.97); }
+
+    .btn-queue { background: var(--mode-color); padding: 6px 9px; font-size: 0.75rem; }
+    .btn-insert { background: var(--warning); padding: 6px 9px; font-size: 0.75rem; }
+    .btn-add-list { background: #6366f1; padding: 6px 9px; font-size: 0.75rem; }
+    .btn-skip { background: #2563eb; padding: 7px 13px; font-size: 0.82rem; }
+
+    /* 影音主舞台 (含 Error 153 防呆：復古黑膠唱片待機動畫) */
+    .ktv-stage {
+      position: relative;
+      width: 100%;
+      background: #000;
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.65);
+    }
+
+    .player-wrapper {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #0a0a10;
+      position: relative;
+    }
+
+    .player-wrapper iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* 待機黑膠唱片視圖 */
+    .standby-display {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #1b1b2f 0%, #08080e 100%);
+      gap: 14px;
+      z-index: 5;
+    }
+
+    .vinyl-disc {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: repeating-radial-gradient(circle, #151515 0, #151515 3px, #262626 4px, #151515 5px);
+      box-shadow: 0 0 25px rgba(255, 0, 127, 0.35), inset 0 0 10px #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: spinVinyl 6s linear infinite;
+    }
+
+    @keyframes spinVinyl {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .vinyl-label {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--mode-color), #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      border: 3px solid #0a0a0f;
+    }
+
+    .standby-tip {
+      font-size: 0.88rem;
+      color: var(--accent);
+      letter-spacing: 1px;
+      text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+    }
+
+    .btn-fullscreen {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(18, 18, 26, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 5px 10px;
+      font-size: 0.75rem;
+      border-radius: 6px;
+      z-index: 25;
+      backdrop-filter: blur(4px);
+    }
+
+    .marquee-layer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 15;
+    }
+
+    .marquee-bullet {
+      position: absolute;
+      white-space: nowrap;
+      left: 100%;
+      font-size: 1.45rem;
+      font-weight: 900;
+      color: #fffb00;
+      text-shadow: 
+        0 0 8px rgba(255, 251, 0, 0.85),
+        0 0 16px rgba(255, 0, 127, 0.9),
+        2px 2px 4px #000;
+      letter-spacing: 2px;
+      will-change: transform;
+      animation: floatMarquee 9s linear forwards;
+    }
+
+    @keyframes floatMarquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(calc(-100vw - 120%)); }
+    }
+
+    .ktv-stage:fullscreen .marquee-bullet {
+      font-size: 2.85rem;
+      letter-spacing: 4px;
+    }
+
+    .ktv-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 18px;
+      pointer-events: none;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .ktv-stage:fullscreen {
+      border-radius: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .ktv-stage:fullscreen .player-wrapper {
+      width: 100%;
+      height: 100%;
+      aspect-ratio: auto;
+    }
+
+    .ktv-stage:fullscreen .ktv-overlay { opacity: 1; }
+    .ktv-stage.hide-controls { cursor: none; }
+    .ktv-stage.hide-controls .ktv-overlay,
+    .ktv-stage.hide-controls .btn-fullscreen { opacity: 0; }
+
+    .ktv-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .ktv-badge {
+      background: linear-gradient(90deg, var(--mode-color), #8b5cf6);
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+
+    .ktv-next {
+      background: rgba(0, 0, 0, 0.7);
+      color: var(--accent);
+      padding: 5px 12px;
+      border-radius: 16px;
+      font-size: 0.85rem;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(0, 243, 255, 0.3);
+      max-width: 55%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ktv-bottom-bar {
+      background: linear-gradient(0deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+      padding: 20px 8px 6px;
+    }
+
+    .ktv-title {
+      font-size: 1.35rem;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hud-toast {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #fff;
+      font-size: 1.2rem;
+      font-weight: bold;
+      padding: 12px 24px;
+      border-radius: 25px;
+      pointer-events: none;
+      z-index: 30;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
+      transition: opacity 0.25s ease;
+    }
+
+    /* 下方：多功能資訊展台 */
+    .showcase-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 16px 18px;
+      display: flex;
+      gap: 16px;
+      align-items: stretch;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+      transition: all 0.3s ease;
+    }
+
+    .showcase-media-box {
+      width: 180px;
+      height: 180px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #0f0f18;
+      border: 1px solid var(--border-color);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .showcase-media-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.5s ease;
+    }
+
+    .showcase-placeholder {
+      font-size: 2.4rem;
+      color: #404054;
+    }
+
+    .showcase-info-box {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+    }
+
+    .showcase-meta-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+
+    .badge-timing {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--warning);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .badge-target {
+      background: rgba(0, 243, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(0, 243, 255, 0.35);
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .showcase-heading {
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+
+    .showcase-prompt-box {
+      background: #0d0d16;
+      border-left: 3px solid var(--mode-color);
+      padding: 12px 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.88rem;
+      line-height: 1.65;
+      color: #e2e8f0;
+      flex: 1;
+      overflow-y: auto;
+      max-height: 115px;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 620px) {
+      .showcase-card {
+        flex-direction: column;
+        align-items: center;
+      }
+      .showcase-media-box {
+        width: 100%;
+        max-width: 250px;
+        height: 170px;
+      }
+      .showcase-info-box {
+        width: 100%;
+      }
+    }
+
+    /* 跑馬燈發送區 */
+    .marquee-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .marquee-input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .marquee-input-row input {
+      flex: 1;
+      background: var(--card-sub);
+      border: 1px solid #36364e;
+      border-radius: 6px;
+      color: #fff;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .marquee-input-row input:focus { border-color: var(--gold); }
+
+    .btn-send-marquee {
+      background: linear-gradient(135deg, var(--mode-color), #f59e0b);
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+
+    .marquee-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .marquee-presets span {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .btn-preset {
+      background: var(--card-sub);
+      border: 1px solid #36364e;
+      color: #d1d1e0;
+      padding: 4px 8px;
+      font-size: 0.72rem;
+      border-radius: 4px;
+    }
+
+    .btn-preset:hover {
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* 排隊清單與歷史 */
+    .queue-section {
+      background: var(--card-bg);
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .tabs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tabs-nav {
+      display: flex;
+      gap: 6px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 6px;
+    }
+
+    .tab-btn:hover { color: #fff; }
+    .tab-btn.active {
+      background: var(--card-sub);
+      color: var(--accent);
+    }
+
+    .queue-controls {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-save-queue { background: var(--success); padding: 7px 11px; font-size: 0.8rem; }
+    .btn-import-list { background: #0284c7; padding: 7px 11px; font-size: 0.8rem; }
+
+    .btn-clear {
+      background: transparent;
+      border: 1px solid #444;
+      color: #aaa;
+      font-size: 0.75rem;
+      padding: 5px 8px;
+    }
+    .btn-clear:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .drag-hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .queue-list,
+    .history-list,
+    .playlist-wrapper {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 290px;
+      overflow-y: auto;
+    }
+
+    .queue-item {
+      display: flex;
+      align-items: center;
+      padding: 9px 11px;
+      background: var(--card-sub);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      cursor: grab;
+      user-select: none;
+      transition: transform 0.15s, opacity 0.15s, border-color 0.15s;
+    }
+
+    .queue-item.dragging { opacity: 0.3; transform: scale(0.98); }
+    .queue-item.drag-over {
+      border-top-color: var(--accent);
+      background: #2e2e44;
+    }
+
+    .drag-handle {
+      color: #666;
+      margin-right: 8px;
+      font-size: 1rem;
+      cursor: grab;
+    }
+
+    .cue-checkbox {
+      margin-right: 8px;
+      accent-color: var(--gold);
+      transform: scale(1.15);
+      cursor: pointer;
+    }
+
+    .song-info {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.86rem;
+    }
+
+    .queue-item.completed .song-info span {
+      text-decoration: line-through;
+      color: #777;
+    }
+
+    .queue-item-tools {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: 6px;
+    }
+
+    .btn-order {
+      background: #151522;
+      color: #aaa;
+      border: 1px solid #333348;
+      font-size: 0.65rem;
+      padding: 4px 6px;
+      border-radius: 4px;
+    }
+
+    .remove-btn {
+      background: transparent;
+      color: var(--text-muted);
+      padding: 4px 6px;
+      font-size: 0.85rem;
+    }
+    .remove-btn:hover { color: var(--danger); }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #1c1c2b;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+
+    .history-time {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-left: 6px;
+    }
+
+    .playlist-card {
+      background: var(--card-sub);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .playlist-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .playlist-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .playlist-badge {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+
+    .playlist-desc {
+      font-size: 0.75rem;
+      color: #a5a5be;
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+
+    .playlist-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .btn-play-all { background: var(--mode-color); padding: 5px 9px; font-size: 0.75rem; }
+    .btn-append-queue { background: #4f46e5; padding: 5px 9px; font-size: 0.75rem; }
+    .btn-edit-list { background: #059669; padding: 5px 9px; font-size: 0.75rem; }
+    .btn-export-list { background: #d97706; padding: 5px 9px; font-size: 0.75rem; }
+    .btn-del-list {
+      background: transparent;
+      border: 1px solid #555;
+      color: #999;
+      padding: 4px 7px;
+      font-size: 0.75rem;
+    }
+    .btn-del-list:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+    /* 純淨投影螢幕樣式 (Stage Role) */
+    body.is-stage-role {
+      padding: 0 !important;
+      margin: 0 !important;
+      background: #000 !important;
+      overflow: hidden !important;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    body.is-stage-role .jukebox-container,
+    body.is-stage-role .boot-overlay,
+    body.is-stage-role .modal-overlay,
+    body.is-stage-role .admin-only {
+      display: none !important;
+    }
+
+    .pure-stage-view {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      z-index: 100000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .pure-stage-photo {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .pure-stage-wrapper {
+      width: 100vw;
+      height: 100vh;
+      aspect-ratio: 16 / 9;
+    }
+
+    .pure-stage-wrapper iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* 手持高對比提詞器面板 */
+    .prompter-overlay {
+      position: fixed;
+      inset: 0;
+      background: #090910;
+      z-index: 99990;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 14px;
+    }
+
+    .prompter-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #232338;
+      padding-bottom: 10px;
+    }
+
+    .prompter-pacing-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .prompter-timer {
+      font-size: 1.6rem;
+      font-family: monospace;
+      font-weight: 900;
+      color: var(--gold);
+      background: #151522;
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid #333348;
+    }
+
+    .prompter-cue-info {
+      font-size: 0.9rem;
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .prompter-body {
+      flex: 1;
+      overflow-y: auto;
+      background: #11111c;
+      border: 1px solid #252538;
+      border-radius: 12px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .prompter-text {
+      font-size: 2.1rem;
+      line-height: 1.6;
+      color: #ffffff;
+      font-weight: 600;
+      white-space: pre-wrap;
+      letter-spacing: 1px;
+    }
+
+    .prompter-footer-controls {
+      display: flex;
+      gap: 10px;
+      padding-top: 8px;
+    }
+
+    .btn-prompter-advance {
+      flex: 2;
+      background: linear-gradient(135deg, var(--warning), #b45309);
+      color: #000;
+      font-size: 1.25rem;
+      font-weight: 900;
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+    }
+
+    .btn-prompter-tool {
+      flex: 1;
+      background: var(--card-sub);
+      border: 1px solid var(--border-color);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    /* 模態視窗通用樣式 */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      backdrop-filter: blur(6px);
+    }
+
+    .modal-card {
+      background: #161624;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 45px rgba(0, 0, 0, 0.95);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 1.12rem;
+      color: var(--accent);
+    }
+
+    .modal-close-btn {
+      background: transparent;
+      color: #888;
+      font-size: 1.25rem;
+      padding: 4px;
+    }
+    .modal-close-btn:hover { color: #fff; }
+
+    .modal-body {
+      padding: 16px 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .modal-footer {
+      padding: 12px 18px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      background: #10101c;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      background: #0d0d16;
+      border: 1px solid #333348;
+      border-radius: 6px;
+      color: #fff;
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus { border-color: var(--accent); }
+
+    .edit-track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .edit-track-card {
+      background: #1d1d2c;
+      border: 1px solid #333348;
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .edit-track-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .edit-track-title-input { flex: 1; font-weight: bold; }
+
+    .export-textarea {
+      width: 100%;
+      height: 250px;
+      background: #090910;
+      border: 1px solid #333348;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-family: monospace;
+      font-size: 0.82rem;
+      padding: 12px;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    .qr-modal-body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .qr-wrapper {
+      background: #fff;
+      padding: 14px;
+      border-radius: 12px;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.75);
+      display: inline-block;
+    }
+
+    .qr-desc {
+      font-size: 0.84rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      max-width: 440px;
+    }
+
+    .qr-url-box {
+      width: 100%;
+      max-width: 460px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .qr-url-box input {
+      flex: 1;
+      background: #0f0f18;
+      border: 1px solid #333348;
+      border-radius: 6px;
+      color: var(--accent);
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      font-family: monospace;
+      outline: none;
+    }
+
+    .shortcuts-footer {
+      font-size: 0.72rem;
+      color: #66667a;
+      text-align: center;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body class="mode-ktv">
+  <!-- 純淨投影副螢幕視圖 (Role = stage) -->
+  <div id="pure-stage-view" class="pure-stage-view hidden">
+    <div id="pure-stage-media-wrap" class="pure-stage-wrapper">
+      <div id="stage-yt-player"></div>
+      <img id="stage-photo-display" class="pure-stage-photo hidden" src="" alt="投影展示" />
+    </div>
+    <div id="stage-marquee-layer" class="marquee-layer"></div>
+  </div>
+
+  <!-- 手持專用高對比提詞器面板 (Prompter View) -->
+  <div id="prompter-overlay" class="prompter-overlay hidden">
+    <div class="prompter-header">
+      <div class="prompter-pacing-box">
+        <span class="prompter-timer" id="prompter-timer">00:00</span>
+        <button id="btn-prompter-reset-timer" class="btn-preset" style="font-size: 0.75rem;">重設</button>
+      </div>
+      <div class="prompter-cue-info" id="prompter-cue-info">待播清單起播中</div>
+      <button id="btn-close-prompter" class="modal-close-btn">✕ 退出</button>
+    </div>
+
+    <div class="prompter-body">
+      <div id="prompter-text" class="prompter-text">請挑選一首歌曲或節點開始播放...</div>
+    </div>
+
+    <div class="prompter-footer-controls">
+      <button id="btn-prompter-ducking" class="btn-prompter-tool">🔉 襯樂 (20%)</button>
+      <button id="btn-prompter-fadeout" class="btn-prompter-tool">⏹ 平滑淡出</button>
+      <button id="btn-prompter-advance" class="btn-prompter-advance">下一首 / 下一節 ⏭</button>
+    </div>
+  </div>
+
+  <!-- 防竄改強制熔斷警示遮罩 (Style C) -->
+  <div id="tamper-lockdown-overlay" class="tamper-lockdown-overlay hidden">
+    <div class="tamper-card">
+      <h2 class="tamper-title">⚠️ 名號不可改，底線不能碰。</h2>
+      <div class="tamper-content">
+旋律只為懂的人響起，本展台只屬於 章偉成。
+
+代碼已被更動，非本人授權版本，全系統永久鎖定。
+      </div>
+      <div class="tamper-badge">SECURITY INTEGRITY COMPROMISED // LOCKDOWN ACTIVE</div>
+    </div>
+  </div>
+
+  <!-- 開機鎖定 (bio810) -->
+  <div id="boot-overlay" class="boot-overlay">
+    <div id="boot-card" class="boot-card">
+      <h2>🔒 系統安全鎖定</h2>
+      <p>請輸入開機密碼以解鎖點唱機與主控台</p>
+      <div class="boot-input-group">
+        <input type="password" id="boot-pwd-input" placeholder="請輸入密碼..." autocomplete="off" />
+        <button id="boot-unlock-btn" class="btn-boot-unlock">開機驗證 🚀</button>
+      </div>
+      <div id="boot-error" class="boot-error hidden">⚠️ 密碼錯誤，請重新輸入！</div>
+    </div>
+
+    <div id="celebration-screen" class="celebration-screen hidden">
+      <canvas id="fireworks-canvas"></canvas>
+      <div class="celebration-content">
+        <h1 class="hero-title" id="hero-title-text">✨ 章偉成最棒 ✨</h1>
+        <p class="hero-subtitle">🎉 專屬 KTV 點唱機 & 影音主控台已就緒，開唱囉！</p>
+        <button id="btn-enter-app" class="btn-enter-app">進入點唱系統 🎵</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="jukebox-container" id="app-container">
+    <header class="header">
+      <div class="header-top-row">
+        <div class="system-title-box">
+          <span style="font-size: 1.55rem;">🎵</span>
+          <h1 class="system-title" id="system-title">復古線上點唱機</h1>
+        </div>
+
+        <div class="header-actions">
+          <!-- 隱藏高階工具列 (解鎖後顯示) -->
+          <button id="btn-open-prompter" class="btn-header-tool admin-only stealth-element" title="開啟手持高對比提詞器">
+            🎙️ 提詞器
+          </button>
+          <button id="btn-open-stage" class="btn-header-tool admin-only stealth-element" title="彈出乾淨投影副螢幕視窗">
+            🖥️ 投影副螢幕
+          </button>
+          <button id="btn-open-qr" class="btn-header-tool btn-share-qr admin-only" title="產生手機親友專屬掃描碼">
+            📱 掃碼同步
+          </button>
+        </div>
+      </div>
+
+      <!-- 隱藏三大核心模式切換器 (解鎖後顯示) -->
+      <nav class="mode-nav-bar admin-only stealth-element" id="stealth-mode-nav">
+        <button class="mode-btn active" data-mode="ktv">🎵 歡樂點唱</button>
+        <button class="mode-btn" data-mode="classroom">🎓 影音教室</button>
+        <button class="mode-btn" data-mode="ceremony">🏛️ 典禮助手</button>
+      </nav>
+
+      <p id="header-desc" style="font-size: 0.8rem; color: var(--text-muted);">
+        熱門搜尋、即時插播、歡唱霓虹投影，朋友客廳相聚的最佳伴侶
+      </p>
+      <div id="guest-indicator" class="guest-badge hidden">🌿 親友同步檢視模式</div>
+    </header>
+
+    <!-- 典禮助手專屬音控面板 (隱藏解鎖後切換浮現) -->
+    <section id="ceremony-ctrl-panel" class="ceremony-panel admin-only hidden">
+      <div class="ceremony-row">
+        <div class="template-selector-box">
+          <label style="font-size: 0.8rem; font-weight: bold; color: var(--gold); white-space: nowrap;">典禮範本：</label>
+          <select id="ceremony-template-select" class="template-select">
+            <option value="rotary">🏛️ 社團例會與交接</option>
+            <option value="birthday">🎂 長輩壽宴祝壽禮</option>
+            <option value="baby">👶 寶寶滿月 & 抓周盛典</option>
+            <option value="wedding">💍 婚禮盛典 (迎娶/進場)</option>
+            <option value="retirement">💐 榮退歡送 (致敬奉獻)</option>
+            <option value="demo">🚀 產品發布與專案成果發表</option>
+          </select>
+          <button id="btn-load-template" class="btn-apply-template">載入流程 📋</button>
+        </div>
+
+        <div class="audio-sfx-bar">
+          <button id="btn-audio-ducking" class="btn-audio-ctrl" title="將音樂壓低至20%，方便說話">
+            🔉 司儀襯樂 (20%)
+          </button>
+          <button id="btn-audio-fadeout" class="btn-audio-ctrl" title="2秒內平滑降至零音量暫停">
+            ⏹ 平滑淡出
+          </button>
+          <button id="btn-sfx-gong" class="btn-audio-ctrl" title="敲擊開會銅鐘 (Web Audio 即時合成)">
+            🔔 鳴鐘音效
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 搜尋輸入區 (Admin) -->
+    <section class="search-section admin-only">
+      <div class="search-bar">
+        <input 
+          type="text" 
+          id="search-input" 
+          placeholder="輸入歌手、歌名搜尋（或直接貼上 YouTube 網址）..." 
+          autocomplete="off"
+        />
+        <span id="search-spinner" class="spinner hidden">⏳</span>
+      </div>
+      <div id="search-results" class="search-results hidden"></div>
+    </section>
+
+    <!-- 上方：影音主舞台 (含 Error 153 防呆：黑膠唱片呼吸待機畫面) -->
+    <main class="main-stage">
+      <div id="ktv-stage" class="ktv-stage">
+        <div class="player-wrapper">
+          <!-- 待機黑膠唱片視圖 (未播前顯示，徹底杜絕空影片引起的 Error 153) -->
+          <div id="standby-display" class="standby-display">
+            <div class="vinyl-disc">
+              <div class="vinyl-label">🎵</div>
+            </div>
+            <div class="standby-tip">點唱機就緒待命，請在上方搜尋點歌...</div>
+          </div>
+          <div id="yt-player" class="hidden"></div>
+        </div>
+
+        <div id="marquee-layer" class="marquee-layer"></div>
+
+        <div class="ktv-overlay">
+          <div class="ktv-top-bar">
+            <span class="ktv-badge" id="stage-badge">🎤 KTV PARTY</span>
+            <span id="ktv-next-up" class="ktv-next">下一首：無</span>
+          </div>
+          <div class="ktv-bottom-bar">
+            <div id="ktv-now-title" class="ktv-title">點播歌曲起播中...</div>
+          </div>
+        </div>
+
+        <div id="hud-toast" class="hud-toast hidden"></div>
+        <button id="fullscreen-btn" class="btn-fullscreen" title="切換全螢幕 (F)">⛶ 全螢幕</button>
+      </div>
+
+      <!-- 下方：多功能資訊展台 -->
+      <section id="showcase-card" class="showcase-card">
+        <div class="showcase-media-box" id="showcase-media-box">
+          <span class="showcase-placeholder" id="showcase-placeholder">📷</span>
+          <img id="showcase-img" class="hidden" src="" alt="展台照片" />
+        </div>
+        <div class="showcase-info-box">
+          <div>
+            <div class="showcase-meta-row">
+              <span class="badge-timing" id="badge-timing">📌 待命起播</span>
+              <span class="badge-target" id="badge-target">🌐 公開點播</span>
+            </div>
+            <div class="showcase-heading" id="showcase-heading">尚未開始播放</div>
+          </div>
+          <div class="showcase-prompt-box" id="showcase-prompt-box">
+            「請在上方搜尋點歌，這裡將同步展現屬於此曲的照片或說明...」
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 跑馬燈發送區 -->
+    <section class="marquee-section" id="marquee-section">
+      <div class="marquee-input-row">
+        <input type="text" id="marquee-input" placeholder="留下一句祝福或歡唱彈幕..." />
+        <button id="marquee-send-btn" class="btn-send-marquee">發送彈幕 📢</button>
+      </div>
+      <div class="marquee-presets" id="marquee-presets-box">
+        <span>快捷字幕：</span>
+        <button class="btn-preset" data-text="👑 章偉成最棒！謝謝你帶給我們的一切！">👑 章偉成最棒</button>
+        <button class="btn-preset" data-text="🎉 祝賀典禮圓滿成功！福壽雙全！">🎉 典禮圓滿</button>
+        <button class="btn-preset" data-text="💐 感謝您無私的付出與精彩相伴！">💐 感謝奉獻</button>
+        <button class="btn-preset" data-text="⭐ 敬精彩無悔的人生，乾一杯！">⭐ 敬精彩人生</button>
+      </div>
+    </section>
+
+    <!-- 排隊清單與歷史標籤 -->
+    <section class="queue-section">
+      <div class="tabs-header">
+        <div class="tabs-nav">
+          <button id="tab-queue-btn" class="tab-btn active"><span id="tab-queue-title">待播清單</span> (<span id="queue-count">0</span>)</button>
+          <button id="tab-playlist-btn" class="tab-btn admin-only">歌單庫 (<span id="playlist-count">0</span>)</button>
+          <button id="tab-history-btn" class="tab-btn admin-only">播放歷史 (<span id="history-count">0</span>)</button>
+        </div>
+        <div class="queue-controls admin-only">
+          <button id="save-queue-btn" class="btn-save-queue" title="將目前的待播佇列儲存為歌單">💾 儲存歌單</button>
+          <button id="import-json-btn" class="btn-import-list" title="從外部讀取 JSON 歌單還原">📥 匯入 JSON</button>
+          <input type="file" id="json-file-input" accept=".json" class="hidden" />
+          <button id="skip-btn" class="btn-skip">切歌 ⏭</button>
+          <button id="clear-history-btn" class="btn-clear hidden">清空歷史</button>
+        </div>
+      </div>
+
+      <div id="queue-tab-panel" class="tab-panel active">
+        <p class="drag-hint" id="queue-hint">💡 提示：長按拖曳可插播調換歌曲順序，點擊可在下方查看歌曲資訊</p>
+        <ul id="queue-list" class="queue-list"></ul>
+      </div>
+
+      <div id="playlist-tab-panel" class="tab-panel admin-only">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <p class="drag-hint" style="margin: 0;">📚 歌單與專案資料庫：</p>
+          <button id="btn-create-empty-list" class="btn-preset" style="color: var(--accent);">+ 新增空白歌單</button>
+        </div>
+        <div id="playlist-wrapper" class="playlist-wrapper"></div>
+      </div>
+
+      <div id="history-tab-panel" class="tab-panel admin-only">
+        <ul id="history-list" class="history-list"></ul>
+      </div>
+    </section>
+
+    <footer class="shortcuts-footer admin-only">
+      提示：在螢幕空白處連續輕敲 6 下可解鎖/隱匿進階功能 | [空白鍵] 播放/暫停 | [→] 切歌 | [Esc] 緊急防窺
+    </footer>
+  </div>
+
+  <!-- QR Code 彈窗 (整合跨手機 MQTT 雲端總線) -->
+  <div id="qr-modal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>📱 親友/賓客同步碼 (掃描即看)</h3>
+        <button id="qr-modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <div class="qr-modal-body">
+        <p class="qr-desc" id="qr-desc-text">
+          現場親友只需拿手機相機對準下方 QR Code 掃描，即可零延遲同步閱讀講稿、相片，並隨時在手機發送祝福彈幕：
+        </p>
+
+        <div class="qr-wrapper">
+          <div id="qrcode-box"></div>
+        </div>
+
+        <div class="qr-url-box">
+          <input type="text" id="qr-target-url" readonly />
+          <button id="btn-copy-qr-url" class="btn-preset" style="color: #fff; padding: 6px 12px;">複製網址</button>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: center;">
+        <button id="btn-download-qrcode" class="btn-save-queue" style="padding: 9px 20px;">
+          💾 下載專屬 QR Code 圖檔
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 流程與歌單編輯彈窗 -->
+  <div id="edit-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="edit-modal-title">✏️ 編輯內容、提詞講稿與照片</h3>
+        <button id="edit-modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>歌單 / 流程名稱：</label>
+          <input type="text" id="edit-pl-name" />
+        </div>
+        <div class="form-group">
+          <label>前言引言 / 備忘說明：</label>
+          <textarea id="edit-pl-desc" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+          <label>曲目順序、提詞與相片：</label>
+          <div id="edit-track-list" class="edit-track-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="edit-modal-cancel" class="btn-clear" style="padding: 8px 14px;">取消</button>
+        <button id="edit-modal-save" class="btn-save-queue" style="padding: 8px 18px;">儲存變更 💾</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 匯出彈窗 -->
+  <div id="export-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="export-modal-title">📤 匯出資料</h3>
+        <button id="export-modal-close" class="modal-close-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label style="font-size: 0.85rem; color: var(--text-muted);">選擇格式：</label>
+          <button id="btn-switch-md" class="btn-preset" style="color: var(--accent); border-color: var(--accent);">Markdown (風格 B)</button>
+          <button id="btn-switch-json" class="btn-preset">JSON (完全備份)</button>
+        </div>
+        <textarea id="export-preview-area" class="export-textarea" readonly></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-export" class="btn-preset" style="color: #fff; padding: 8px 14px;">📋 複製內容</button>
+        <button id="btn-download-export" class="btn-save-queue" style="padding: 8px 14px;">💾 下載檔案</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <script>
+    // ====================================================
+    // A. 完整性校驗 (Style C)
+    // ====================================================
+    const _ROOT_AUTH_KEY = "bio810";
+    const _ROOT_AUTH_SIG = "章偉成最棒";
+
+    function verifySystemIntegrity() {
+      const expectedKeyCodes = [98, 105, 111, 56, 49, 48];
+      if (_ROOT_AUTH_KEY.length !== expectedKeyCodes.length) return false;
+      for (let i = 0; i < expectedKeyCodes.length; i++) {
+        if (_ROOT_AUTH_KEY.charCodeAt(i) !== expectedKeyCodes[i]) return false;
+      }
+
+      const expectedSigCodes = [31456, 20553, 25104, 26368, 26834];
+      if (_ROOT_AUTH_SIG.length !== expectedSigCodes.length) return false;
+      for (let i = 0; i < expectedSigCodes.length; i++) {
+        if (_ROOT_AUTH_SIG.charCodeAt(i) !== expectedSigCodes[i]) return false;
+      }
+
+      const heroEl = document.getElementById("hero-title-text");
+      if (!heroEl || !heroEl.textContent.includes(_ROOT_AUTH_SIG)) return false;
+
+      return true;
+    }
+
+    function triggerLockdown() {
+      const lockdownOverlay = document.getElementById("tamper-lockdown-overlay");
+      if (lockdownOverlay) lockdownOverlay.classList.remove("hidden");
+      const appContainer = document.getElementById("app-container");
+      if (appContainer) appContainer.remove();
+      const bootCardEl = document.getElementById("boot-card");
+      if (bootCardEl) bootCardEl.remove();
+
+      window.onYouTubeIframeAPIReady = null;
+      if (player && typeof player.destroy === "function") player.destroy();
+      throw new Error("Security Integrity Compromised: System Terminated.");
+    }
+
+    // ====================================================
+    // B. 免伺服器跨手機 MQTT 雲端總線整合
+    // ====================================================
+    const stageBus = new BroadcastChannel("ceremony_stage_bus");
+
+    // 取得或產生專屬隨機房間 ID
+    let currentRoomId = new URLSearchParams(window.location.search).get("room");
+    if (!currentRoomId) {
+      currentRoomId = localStorage.getItem("jukebox_room_id");
+      if (!currentRoomId) {
+        currentRoomId = "cwc_" + Math.floor(1000 + Math.random() * 9000);
+        localStorage.setItem("jukebox_room_id", currentRoomId);
+      }
+    }
+
+    // 連線至免費公共 SSL WebSocket MQTT Broker
+    let mqttClient = null;
+    const MQTT_BROKER = "wss://broker.emqx.io:8084/mqtt";
+    const MQTT_TOPIC_SYNC = `jukebox/${currentRoomId}/sync`;
+    const MQTT_TOPIC_BULLET = `jukebox/${currentRoomId}/bullet`;
+
+    try {
+      mqttClient = mqtt.connect(MQTT_BROKER, {
+        clientId: "cwc_" + Math.random().toString(16).substring(2, 10),
+        clean: true,
+        connectTimeout: 4000
+      });
+
+      mqttClient.on("connect", () => {
+        console.log("MQTT 雲端總線已連接，房號：", currentRoomId);
+        mqttClient.subscribe([MQTT_TOPIC_SYNC, MQTT_TOPIC_BULLET]);
+      });
+
+      mqttClient.on("message", (topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          if (topic === MQTT_TOPIC_SYNC) {
+            // 親友手機收到同步廣播，連動更新展卡
+            if (isGuestMode) {
+              updateShowcase(data.track, false);
+            }
+          } else if (topic === MQTT_TOPIC_BULLET) {
+            // 收到親友送出的祝福彈幕
+            spawnMarquee(data.text, false);
+          }
+        } catch (err) {
+          console.warn("MQTT 封包解析失敗：", err);
+        }
+      });
+    } catch (e) {
+      console.warn("MQTT 初始化失敗：", e);
+    }
+
+    function broadcastCloudSync(track) {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC_SYNC, JSON.stringify({ track }), { qos: 0 });
+      }
+    }
+
+    function broadcastCloudBullet(text) {
+      if (mqttClient && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC_BULLET, JSON.stringify({ text }), { qos: 0 });
+      }
+    }
+
+    // ====================================================
+    // C. 範本資料庫
+    // ====================================================
+    const CEREMONY_TEMPLATES = {
+      rotary: {
+        name: "社團例會與授證交接",
+        desc: "鳴鐘開會、社歌大合唱、宣誓就職、閉會鳴鐘",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 迎賓入席 - 輕音樂", timingNote: "入席就座 (音量30%)", target: "public", photo: "", message: "司儀：各位社友、長官與貴賓請依序就座，今日例會即將準時開始。" },
+          { id: "L_XJ_s5IsQc", title: "2. 主席鳴鐘開會", timingNote: "主席敲鐘起音", target: "public", photo: "", message: "司儀：全體起立！恭請主席鳴鐘開會！" }
+        ]
+      },
+      birthday: {
+        name: "長輩壽宴祝壽禮",
+        desc: "兒孫祝壽行禮、老照片回顧、切蛋糕合唱",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 喜迎賓客 - 歡慶團聚", timingNote: "親友入席寒暄", target: "public", photo: "", message: "司儀：歡迎各位至親好友蒞臨，一同為壽星獻上最溫暖的祝福！" }
+        ]
+      },
+      baby: {
+        name: "寶寶滿月 & 抓周盛典",
+        desc: "成長縮時、抓周逐項唱名吉祥話、合影留念",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 溫馨童趣 - 歡樂迎賓", timingNote: "親友入席", target: "public", photo: "", message: "司儀：抓周正式開始！" }
+        ]
+      },
+      wedding: {
+        name: "婚禮盛典 (迎娶/進場)",
+        desc: "新人浪漫進場、交手儀式、鞠躬謝親恩",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 愛的序曲 - 浪漫迎賓", timingNote: "貴賓入席", target: "public", photo: "", message: "司儀：請全體起立，熱烈掌聲歡迎新郎與新娘步上幸福紅毯！" }
+        ]
+      },
+      retirement: {
+        name: "榮退歡送 (致敬奉獻)",
+        desc: "光輝歲月紀錄、同仁獻花、珍重再見",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 奉獻歲月 - 光輝成就導讀", timingNote: "簡報播放", target: "public", photo: "", message: "司儀：感謝前輩數十載春風化雨、兢兢業業。" }
+        ]
+      },
+      demo: {
+        name: "產品發布與專案成果發表",
+        desc: "倒數登場、痛點展示、核心架構解說、Q&A 總結",
+        songs: [
+          { id: "dQw4w9WgXcQ", title: "1. 震撼倒數開場 - 電子節奏", timingNote: "開場倒數 (音量50%)", target: "public", photo: "", message: "主講人：感謝各位嘉賓與評審蒞臨，我們的發表正式開始！" },
+          { id: "L_XJ_s5IsQc", title: "2. 核心 Demo 展示 - 純淨襯樂", timingNote: "實機操作展示", target: "public", photo: "", message: "主講人：大家請看大螢幕，這就是我們的核心解方！" }
+        ]
+      }
+    };
+
+    // ====================================================
+    // D. 起始狀態設定 (預設起始為 KTV 點唱機模式)
+    // ====================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const roleParam = urlParams.get("role");
+    const isStageRole = roleParam === "stage";
+    const isGuestMode = urlParams.get("guest") === "true";
+    const initialMode = urlParams.get("mode") || "ktv";
+
+    let currentMode = initialMode;
+    let isStealthUnlocked = false; // 預設隱密
+    let blankTapCount = 0;
+    let blankTapTimer = null;
+
+    let player = null;
+    let stagePlayer = null;
+    let isPlayerReady = false;
+    let isStagePlayerReady = false;
+
+    let queue = [];
+    let historyList = [];
+    let customPlaylists = [];
+    let currentTrack = null;
+    let draggedItemIndex = null;
+    let hudTimer = null;
+
+    let isAudioDucked = false;
+    let preDuckedVolume = 100;
+
+    let prompterSeconds = 0;
+    let prompterInterval = null;
+
+    let marqueeLane = 0;
+    const MARQUEE_LANES = [14, 28, 44, 60, 75];
+
+    let activeEditingPlaylistIdx = null;
+    let activeExportingPlaylist = null;
+    let currentExportFormat = "md";
+
+    // DOM 快取
+    const standbyDisplay = document.getElementById("standby-display");
+    const ytPlayerEl = document.getElementById("yt-player");
+    const pureStageView = document.getElementById("pure-stage-view");
+    const stagePhotoDisplay = document.getElementById("stage-photo-display");
+    const stageMarqueeLayer = document.getElementById("stage-marquee-layer");
+
+    const prompterOverlay = document.getElementById("prompter-overlay");
+    const prompterTimer = document.getElementById("prompter-timer");
+    const prompterCueInfo = document.getElementById("prompter-cue-info");
+    const prompterText = document.getElementById("prompter-text");
+    const btnOpenPrompter = document.getElementById("btn-open-prompter");
+    const btnClosePrompter = document.getElementById("btn-close-prompter");
+    const btnPrompterAdvance = document.getElementById("btn-prompter-advance");
+    const btnPrompterDucking = document.getElementById("btn-prompter-ducking");
+    const btnPrompterFadeout = document.getElementById("btn-prompter-fadeout");
+    const btnPrompterResetTimer = document.getElementById("btn-prompter-reset-timer");
+    const btnOpenStage = document.getElementById("btn-open-stage");
+
+    const systemTitle = document.getElementById("system-title");
+    const headerDesc = document.getElementById("header-desc");
+    const stageBadge = document.getElementById("stage-badge");
+    const tabQueueTitle = document.getElementById("tab-queue-title");
+    const ceremonyCtrlPanel = document.getElementById("ceremony-ctrl-panel");
+    const marqueeSection = document.getElementById("marquee-section");
+
+    const btnAudioDucking = document.getElementById("btn-audio-ducking");
+    const btnAudioFadeout = document.getElementById("btn-audio-fadeout");
+    const btnSfxGong = document.getElementById("btn-sfx-gong");
+    const ceremonyTemplateSelect = document.getElementById("ceremony-template-select");
+    const btnLoadTemplate = document.getElementById("btn-load-template");
+
+    const bootOverlay = document.getElementById("boot-overlay");
+    const bootCard = document.getElementById("boot-card");
+    const bootPwdInput = document.getElementById("boot-pwd-input");
+    const bootUnlockBtn = document.getElementById("boot-unlock-btn");
+    const bootError = document.getElementById("boot-error");
+    const celebrationScreen = document.getElementById("celebration-screen");
+    const btnEnterApp = document.getElementById("btn-enter-app");
+    const fireworksCanvas = document.getElementById("fireworks-canvas");
+    const ctx = fireworksCanvas.getContext("2d");
+    const guestIndicator = document.getElementById("guest-indicator");
+    const queueHint = document.getElementById("queue-hint");
+
+    const searchInput = document.getElementById("search-input");
+    const searchSpinner = document.getElementById("search-spinner");
+    const searchResults = document.getElementById("search-results");
+    const queueListEl = document.getElementById("queue-list");
+    const historyListEl = document.getElementById("history-list");
+    const playlistWrapperEl = document.getElementById("playlist-wrapper");
+    const queueCountEl = document.getElementById("queue-count");
+    const historyCountEl = document.getElementById("history-count");
+    const playlistCountEl = document.getElementById("playlist-count");
+    const tabQueueBtn = document.getElementById("tab-queue-btn");
+    const tabPlaylistBtn = document.getElementById("tab-playlist-btn");
+    const tabHistoryBtn = document.getElementById("tab-history-btn");
+    const queueTabPanel = document.getElementById("queue-tab-panel");
+    const playlistTabPanel = document.getElementById("playlist-tab-panel");
+    const historyTabPanel = document.getElementById("history-tab-panel");
+    const saveQueueBtn = document.getElementById("save-queue-btn");
+    const importJsonBtn = document.getElementById("import-json-btn");
+    const jsonFileInput = document.getElementById("json-file-input");
+    const clearHistoryBtn = document.getElementById("clear-history-btn");
+    const btnCreateEmptyList = document.getElementById("btn-create-empty-list");
+    const skipBtn = document.getElementById("skip-btn");
+    const ktvStage = document.getElementById("ktv-stage");
+    const fullscreenBtn = document.getElementById("fullscreen-btn");
+    const ktvNowTitle = document.getElementById("ktv-now-title");
+    const ktvNextUp = document.getElementById("ktv-next-up");
+    const hudToast = document.getElementById("hud-toast");
+    const marqueeLayer = document.getElementById("marquee-layer");
+    const marqueeInput = document.getElementById("marquee-input");
+    const marqueeSendBtn = document.getElementById("marquee-send-btn");
+
+    const showcaseImg = document.getElementById("showcase-img");
+    const showcasePlaceholder = document.getElementById("showcase-placeholder");
+    const badgeTiming = document.getElementById("badge-timing");
+    const badgeTarget = document.getElementById("badge-target");
+    const showcaseHeading = document.getElementById("showcase-heading");
+    const showcasePromptBox = document.getElementById("showcase-prompt-box");
+
+    const btnOpenQr = document.getElementById("btn-open-qr");
+    const qrModal = document.getElementById("qr-modal");
+    const qrModalClose = document.getElementById("qr-modal-close");
+    const qrcodeBox = document.getElementById("qrcode-box");
+    const qrTargetUrl = document.getElementById("qr-target-url");
+    const btnCopyQrUrl = document.getElementById("btn-copy-qr-url");
+    const btnDownloadQrcode = document.getElementById("btn-download-qrcode");
+    let qrcodeInstance = null;
+
+    const editModal = document.getElementById("edit-modal");
+    const editModalClose = document.getElementById("edit-modal-close");
+    const editModalCancel = document.getElementById("edit-modal-cancel");
+    const editModalSave = document.getElementById("edit-modal-save");
+    const editPlName = document.getElementById("edit-pl-name");
+    const editPlDesc = document.getElementById("edit-pl-desc");
+    const editTrackList = document.getElementById("edit-track-list");
+
+    const exportModal = document.getElementById("export-modal");
+    const exportModalClose = document.getElementById("export-modal-close");
+    const exportPreviewArea = document.getElementById("export-preview-area");
+    const btnSwitchMd = document.getElementById("btn-switch-md");
+    const btnSwitchJson = document.getElementById("btn-switch-json");
+    const btnCopyExport = document.getElementById("btn-copy-export");
+    const btnDownloadExport = document.getElementById("btn-download-export");
+
+    // ====================================================
+    // E. 介面任何空白處連敲 6 下解鎖 + 搜尋框暗號
+    // ====================================================
+    function toggleStealthMode(forceState = null) {
+      if (forceState !== null) {
+        isStealthUnlocked = forceState;
+      } else {
+        isStealthUnlocked = !isStealthUnlocked;
+      }
+
+      if (isStealthUnlocked) {
+        document.body.classList.add("stealth-unlocked");
+        showHUD("✨ 主控模式已解鎖");
+      } else {
+        document.body.classList.remove("stealth-unlocked");
+        setSystemMode("ktv");
+        closePrompterView();
+        showHUD("🔒 已切換為純淨點唱機");
+      }
+    }
+
+    // 監聽全局點擊：避開按鈕與輸入框，在任何空白區域連敲 6 下解鎖
+    document.addEventListener("click", (e) => {
+      if (e.target.closest("button, input, textarea, select, .queue-item, .search-item, .btn-preset, .playlist-card")) {
+        return; // 操作具體功能時不計算，防止誤觸
+      }
+
+      blankTapCount++;
+      clearTimeout(blankTapTimer);
+      blankTapTimer = setTimeout(() => { blankTapCount = 0; }, 1500);
+
+      if (blankTapCount >= 6) {
+        blankTapCount = 0;
+        toggleStealthMode();
+      }
+    });
+
+    // 搜尋框輸入 cue 或 bio810 解鎖
+    function checkSearchCipher(val) {
+      const trimmed = val.trim().toLowerCase();
+      if (trimmed === "cue" || trimmed === "bio810") {
+        searchInput.value = "";
+        closeSearch();
+        toggleStealthMode(true);
+        return true;
+      }
+      return false;
+    }
+
+    // ====================================================
+    // F. 雙端通訊處理
+    // ====================================================
+    if (isStageRole) {
+      document.body.classList.add("is-stage-role");
+      pureStageView.classList.remove("hidden");
+
+      stageBus.onmessage = (event) => {
+        const msg = event.data;
+        if (!msg) return;
+
+        if (msg.type === "SYNC_TRACK") {
+          updateStageScreen(msg.track);
+        } else if (msg.type === "PLAYER_COMMAND") {
+          if (stagePlayer && isStagePlayerReady) {
+            if (msg.command === "play") stagePlayer.playVideo();
+            if (msg.command === "pause") stagePlayer.pauseVideo();
+            if (msg.command === "volume") stagePlayer.setVolume(msg.value);
+          }
+        } else if (msg.type === "MARQUEE") {
+          spawnStageMarquee(msg.text);
+        }
+      };
+    }
+
+    function broadcastToStage(type, payload) {
+      stageBus.postMessage({ type, ...payload });
+    }
+
+    function updateStageScreen(track) {
+      if (!track) {
+        stagePhotoDisplay.classList.add("hidden");
+        return;
+      }
+      if (track.photo) {
+        stagePhotoDisplay.src = track.photo;
+        stagePhotoDisplay.classList.remove("hidden");
+      } else {
+        stagePhotoDisplay.classList.add("hidden");
+      }
+      if (stagePlayer && isStagePlayerReady && track.id) {
+        stagePlayer.loadVideoById(track.id);
+      }
+    }
+
+    function spawnStageMarquee(text) {
+      const bullet = document.createElement("div");
+      bullet.className = "marquee-bullet";
+      bullet.style.fontSize = "3.2rem";
+      bullet.textContent = text;
+      const topOffset = MARQUEE_LANES[marqueeLane % MARQUEE_LANES.length];
+      marqueeLane++;
+      bullet.style.top = `${topOffset}%`;
+      bullet.addEventListener("animationend", () => bullet.remove());
+      stageMarqueeLayer.appendChild(bullet);
+    }
+
+    btnOpenStage.onclick = () => {
+      const stageUrl = `${window.location.origin}${window.location.pathname}?role=stage`;
+      window.open(stageUrl, "CeremonyStageScreen", "width=1280,height=720,menubar=no,toolbar=no");
+      showHUD("🖥️ 已開啟投影副螢幕視窗！");
+      if (currentTrack) {
+        setTimeout(() => broadcastToStage("SYNC_TRACK", { track: currentTrack }), 800);
+      }
+    };
+
+    // ====================================================
+    // G. 手持提詞器
+    // ====================================================
+    function openPrompterView() {
+      prompterOverlay.classList.remove("hidden");
+      startPrompterTimer();
+      updatePrompterDisplay();
+    }
+
+    function closePrompterView() {
+      prompterOverlay.classList.add("hidden");
+    }
+
+    function startPrompterTimer() {
+      if (prompterInterval) clearInterval(prompterInterval);
+      prompterInterval = setInterval(() => {
+        prompterSeconds++;
+        const mins = String(Math.floor(prompterSeconds / 60)).padStart(2, "0");
+        const secs = String(prompterSeconds % 60).padStart(2, "0");
+        prompterTimer.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    btnPrompterResetTimer.onclick = () => {
+      prompterSeconds = 0;
+      prompterTimer.textContent = "00:00";
+    };
+
+    function updatePrompterDisplay() {
+      if (!currentTrack) {
+        prompterCueInfo.textContent = "待命起播";
+        prompterText.textContent = "流程尚未起播，點擊下方按鈕即可開始...";
+        return;
+      }
+      prompterCueInfo.textContent = `${currentTrack.timingNote || '進行中'} - ${currentTrack.title}`;
+      prompterText.textContent = currentTrack.message ? currentTrack.message : "（此曲尚未設定特別說明）";
+    }
+
+    btnOpenPrompter.onclick = openPrompterView;
+    btnClosePrompter.onclick = closePrompterView;
+
+    btnPrompterAdvance.onclick = () => {
+      playNextTrack();
+      updatePrompterDisplay();
+    };
+
+    btnPrompterDucking.onclick = () => {
+      btnAudioDucking.click();
+      btnPrompterDucking.classList.toggle("active", isAudioDucked);
+    };
+
+    btnPrompterFadeout.onclick = () => {
+      btnAudioFadeout.click();
+    };
+
+    // ====================================================
+    // H. 模式切換邏輯
+    // ====================================================
+    function setSystemMode(mode) {
+      currentMode = mode;
+      document.body.classList.remove("mode-ktv", "mode-classroom", "mode-ceremony");
+      document.body.classList.add(`mode-${mode}`);
+
+      document.querySelectorAll(".mode-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.mode === mode);
+      });
+
+      if (mode === "ktv") {
+        systemTitle.textContent = "復古線上點唱機";
+        headerDesc.textContent = "熱門搜尋、即時插播、歡唱霓虹投影，朋友客廳相聚的最佳伴侶";
+        stageBadge.textContent = "🎤 KTV PARTY";
+        tabQueueTitle.textContent = "待播清單";
+        ceremonyCtrlPanel.classList.add("hidden");
+        marqueeSection.classList.remove("hidden");
+        queueHint.textContent = "💡 提示：長按拖曳可插播調換歌曲順序，點擊可在下方查看歌曲資訊";
+      } else if (mode === "classroom") {
+        systemTitle.textContent = "影音視聽教室";
+        headerDesc.textContent = "課堂教學、影片時間軸觀察、講義對照，高效教學與講堂必備";
+        stageBadge.textContent = "📚 CLASS LECTURE";
+        tabQueueTitle.textContent = "教學章節大綱";
+        ceremonyCtrlPanel.classList.add("hidden");
+        marqueeSection.classList.add("hidden");
+        queueHint.textContent = "💡 提示：點擊核取方塊標記教學進度，點選章節即時對照講義備忘";
+      } else {
+        systemTitle.textContent = "典禮助手 Console";
+        headerDesc.textContent = "流程進度掌控、司儀講稿提詞、影音大屏同步，從容掌控全場";
+        stageBadge.textContent = "🏛️ CEREMONY CUE";
+        tabQueueTitle.textContent = "流程 Cue 表";
+        ceremonyCtrlPanel.classList.remove("hidden");
+        marqueeSection.classList.remove("hidden");
+        queueHint.textContent = "💡 提示：點擊核取方塊標記完成，長按可拖曳調整節點順序，點擊可即時預覽提詞";
+      }
+
+      renderQueue();
+      updateKtvOverlay();
+    }
+
+    document.querySelectorAll(".mode-btn").forEach(btn => {
+      btn.onclick = () => setSystemMode(btn.dataset.mode);
+    });
+
+    // ====================================================
+    // I. 音控面板引擎
+    // ====================================================
+    btnAudioDucking.onclick = () => {
+      if (!player || !isPlayerReady) return;
+      if (!isAudioDucked) {
+        preDuckedVolume = player.getVolume();
+        player.setVolume(20);
+        isAudioDucked = true;
+        btnAudioDucking.classList.add("active");
+        btnAudioDucking.textContent = "🔊 恢復原音量";
+        showHUD("🔉 襯樂 (音量20%)");
+        broadcastToStage("PLAYER_COMMAND", { command: "volume", value: 20 });
+      } else {
+        player.setVolume(preDuckedVolume);
+        isAudioDucked = false;
+        btnAudioDucking.classList.remove("active");
+        btnAudioDucking.textContent = "🔉 司儀襯樂 (20%)";
+        showHUD(`🔊 恢復音量 ${preDuckedVolume}%`);
+        broadcastToStage("PLAYER_COMMAND", { command: "volume", value: preDuckedVolume });
+      }
+    };
+
+    btnAudioFadeout.onclick = () => {
+      if (!player || !isPlayerReady) return;
+      const startVol = player.getVolume();
+      const steps = 15;
+      const stepTime = 130;
+      let stepCount = 0;
+
+      showHUD("⏹ 音量平滑淡出中...");
+      const interval = setInterval(() => {
+        stepCount++;
+        const targetVol = Math.max(0, Math.round(startVol - (startVol / steps) * stepCount));
+        player.setVolume(targetVol);
+        broadcastToStage("PLAYER_COMMAND", { command: "volume", value: targetVol });
+        if (stepCount >= steps) {
+          clearInterval(interval);
+          player.pauseVideo();
+          broadcastToStage("PLAYER_COMMAND", { command: "pause" });
+          player.setVolume(startVol);
+          showHUD("⏸ 已淡出暫停");
+        }
+      }, stepTime);
+    };
+
+    btnSfxGong.onclick = () => {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const actx = new AudioContext();
+        const osc = actx.createOscillator();
+        const gain = actx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(587.33, actx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(293.66, actx.currentTime + 3.2);
+        gain.gain.setValueAtTime(0.85, actx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 3.2);
+        osc.connect(gain);
+        gain.connect(actx.destination);
+        osc.start();
+        osc.stop(actx.currentTime + 3.2);
+        showHUD("🔔 鳴鐘！");
+      } catch (err) {
+        console.warn("Web Audio 初始化失敗：", err);
+      }
+    };
+
+    btnLoadTemplate.onclick = () => {
+      const templateKey = ceremonyTemplateSelect.value;
+      const tmpl = CEREMONY_TEMPLATES[templateKey];
+      if (!tmpl) return;
+
+      if (queue.length > 0 && !confirm(`載入【${tmpl.name}】將會取代當前清單，是否繼續？`)) {
+        return;
+      }
+      queue = JSON.parse(JSON.stringify(tmpl.songs));
+      persistData();
+      renderQueue();
+      showHUD(`📋 已套用範本：${tmpl.name}`);
+      if (!currentTrack) playNextTrack();
+    };
+
+    // ====================================================
+    // J. 開機驗證與模式解鎖
+    // ====================================================
+    if (isGuestMode) {
+      document.body.classList.add("is-guest");
+      bootOverlay.style.display = "none";
+      guestIndicator.classList.remove("hidden");
+      guestIndicator.textContent = `🌿 親友專屬同步展台 (房號: ${currentRoomId})`;
+      headerDesc.textContent = `掌心即時同步閱讀照片與說明，下方可即時向大螢幕發送彈幕祝福！`;
+    }
+
+    function checkPassword() {
+      if (!verifySystemIntegrity()) {
+        triggerLockdown();
+        return;
+      }
+      const val = bootPwdInput.value.trim();
+      if (val === _ROOT_AUTH_KEY) {
+        bootError.classList.add("hidden");
+        bootCard.classList.add("hidden");
+        celebrationScreen.classList.remove("hidden");
+        startFireworks();
+        setTimeout(() => { dismissBootScreen(); }, 5500);
+      } else {
+        bootError.classList.remove("hidden");
+        bootPwdInput.value = "";
+        bootPwdInput.focus();
+      }
+    }
+
+    bootUnlockBtn.onclick = checkPassword;
+    bootPwdInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") checkPassword();
+    });
+
+    function dismissBootScreen() {
+      bootOverlay.style.opacity = "0";
+      setTimeout(() => {
+        bootOverlay.style.visibility = "hidden";
+        if (fireworksAnimationId) cancelAnimationFrame(fireworksAnimationId);
+      }, 600);
+    }
+
+    btnEnterApp.onclick = dismissBootScreen;
+
+    function resizeCanvas() {
+      fireworksCanvas.width = window.innerWidth;
+      fireworksCanvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    class FireworkParticle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 6 + 2;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.alpha = 1;
+        this.decay = Math.random() * 0.015 + 0.012;
+        this.gravity = 0.08;
+      }
+      update() {
+        this.vx *= 0.98;
+        this.vy *= 0.98;
+        this.vy += this.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= this.decay;
+      }
+      draw(context) {
+        context.save();
+        context.globalAlpha = Math.max(0, this.alpha);
+        context.beginPath();
+        context.arc(this.x, this.y, 3, 0, Math.PI * 2);
+        context.fillStyle = this.color;
+        context.shadowBlur = 10;
+        context.shadowColor = this.color;
+        context.fill();
+        context.restore();
+      }
+    }
+
+    let fireworksAnimationId = null;
+    let particles = [];
+
+    function createFirework(x, y) {
+      const colors = ["#ff007f", "#00f3ff", "#ffd700", "#10b981", "#ff5722", "#a855f7", "#ffffff"];
+      const baseColor = colors[Math.floor(Math.random() * colors.length)];
+      for (let i = 0; i < 45; i++) {
+        particles.push(new FireworkParticle(x, y, baseColor));
+      }
+    }
+
+    function loopFireworks() {
+      ctx.fillStyle = "rgba(8, 8, 13, 0.22)";
+      ctx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
+      if (Math.random() < 0.12) {
+        const rx = Math.random() * (fireworksCanvas.width * 0.8) + (fireworksCanvas.width * 0.1);
+        const ry = Math.random() * (fireworksCanvas.height * 0.5) + (fireworksCanvas.height * 0.1);
+        createFirework(rx, ry);
+      }
+      for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        particles[i].draw(ctx);
+        if (particles[i].alpha <= 0) particles.splice(i, 1);
+      }
+      fireworksAnimationId = requestAnimationFrame(loopFireworks);
+    }
+
+    function startFireworks() {
+      createFirework(window.innerWidth * 0.3, window.innerHeight * 0.35);
+      createFirework(window.innerWidth * 0.5, window.innerHeight * 0.25);
+      createFirework(window.innerWidth * 0.7, window.innerHeight * 0.35);
+      loopFireworks();
+    }
+
+    // ====================================================
+    // K. QR Code 產生 (含專屬 MQTT 同步房號)
+    // ====================================================
+    function generateGuestQRCode() {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set("guest", "true");
+      currentUrl.searchParams.set("mode", currentMode);
+      currentUrl.searchParams.set("room", currentRoomId);
+
+      const targetShareUrl = currentUrl.toString();
+      qrTargetUrl.value = targetShareUrl;
+      qrcodeBox.innerHTML = "";
+      qrcodeInstance = new QRCode(qrcodeBox, {
+        text: targetShareUrl,
+        width: 200,
+        height: 200,
+        colorDark: "#111827",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+      });
+    }
+
+    btnOpenQr.onclick = () => {
+      generateGuestQRCode();
+      qrModal.classList.remove("hidden");
+    };
+
+    qrModalClose.onclick = () => qrModal.classList.add("hidden");
+
+    btnCopyQrUrl.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(qrTargetUrl.value);
+        showHUD("📋 同步網址已複製！");
+      } catch (err) {
+        qrTargetUrl.select();
+        document.execCommand("copy");
+        showHUD("📋 已複製！");
+      }
+    };
+
+    btnDownloadQrcode.onclick = () => {
+      const img = qrcodeBox.querySelector("img");
+      const canvas = qrcodeBox.querySelector("canvas");
+      let dataUrl = img && img.src ? img.src : (canvas ? canvas.toDataURL("image/png") : "");
+      if (dataUrl) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `點唱機_${currentRoomId}_QRCode.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showHUD("💾 已下載 QR Code 圖檔！");
+      }
+    };
+
+    // ====================================================
+    // L. 本地暫存與啟動初始化
+    // ====================================================
+    function loadSavedData() {
+      if (!verifySystemIntegrity()) {
+        triggerLockdown();
+        return;
+      }
+
+      try {
+        const savedQueue = localStorage.getItem("jukebox_queue");
+        const savedHistory = localStorage.getItem("jukebox_history");
+        const savedPlaylists = localStorage.getItem("jukebox_playlists");
+
+        if (savedQueue) queue = JSON.parse(savedQueue);
+        if (savedHistory) historyList = JSON.parse(savedHistory);
+
+        if (savedPlaylists) {
+          customPlaylists = JSON.parse(savedPlaylists);
+        } else {
+          customPlaylists = Object.keys(CEREMONY_TEMPLATES).map(k => ({
+            id: "pl_" + k,
+            name: CEREMONY_TEMPLATES[k].name,
+            description: CEREMONY_TEMPLATES[k].desc,
+            updatedAt: "2026-10-01",
+            songs: CEREMONY_TEMPLATES[k].songs
+          }));
+        }
+      } catch (err) {
+        console.error("載入暫存失敗：", err);
+      }
+
+      setSystemMode(currentMode);
+      renderQueue();
+      renderHistory();
+      renderPlaylists();
+      updateKtvOverlay();
+    }
+
+    function persistData() {
+      localStorage.setItem("jukebox_queue", JSON.stringify(queue));
+      localStorage.setItem("jukebox_history", JSON.stringify(historyList));
+      localStorage.setItem("jukebox_playlists", JSON.stringify(customPlaylists));
+    }
+
+    // ====================================================
+    // M. 歌單庫與排隊控制
+    // ====================================================
+    function renderPlaylists() {
+      playlistCountEl.textContent = customPlaylists.length;
+      playlistWrapperEl.innerHTML = "";
+
+      if (customPlaylists.length === 0) {
+        playlistWrapperEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #666; font-size: 0.85rem;">目前無歌單資料，可點右上角新增</div>`;
+        return;
+      }
+
+      customPlaylists.forEach((list, idx) => {
+        const card = document.createElement("div");
+        card.className = "playlist-card";
+        card.innerHTML = `
+          <div class="playlist-header-row">
+            <div>
+              <div>
+                <span class="playlist-name">📁 ${list.name}</span>
+                <span class="playlist-badge">(${list.songs.length} 首歌)</span>
+              </div>
+              <div class="playlist-desc">${list.description || "暫無說明"}</div>
+            </div>
+          </div>
+          <div class="playlist-actions">
+            <button class="btn-play-all" data-action="play">▶ 播放此歌單</button>
+            <button class="btn-append-queue" data-action="append">+ 追加至待播</button>
+            <button class="btn-edit-list" data-action="edit">✏️ 編輯圖文</button>
+            <button class="btn-export-list" data-action="export">📤 匯出</button>
+            <button class="btn-del-list" data-action="del">🗑️</button>
+          </div>
+        `;
+
+        card.querySelector('[data-action="play"]').onclick = () => {
+          if (list.songs.length === 0) return alert("此歌單內無任何歌曲！");
+          queue = JSON.parse(JSON.stringify(list.songs));
+          persistData();
+          renderQueue();
+          playNextTrack();
+          showHUD(`▶ 開始播放: ${list.name}`);
+        };
+
+        card.querySelector('[data-action="append"]').onclick = () => {
+          if (list.songs.length === 0) return alert("此歌單內無歌曲！");
+          queue.push(...JSON.parse(JSON.stringify(list.songs)));
+          persistData();
+          renderQueue();
+          showHUD(`➕ 已追加 ${list.songs.length} 首`);
+          if (!currentTrack) playNextTrack();
+        };
+
+        card.querySelector('[data-action="edit"]').onclick = () => openEditModal(idx);
+        card.querySelector('[data-action="export"]').onclick = () => openExportModal(list);
+
+        card.querySelector('[data-action="del"]').onclick = () => {
+          if (confirm(`確定要刪除「${list.name}」嗎？`)) {
+            customPlaylists.splice(idx, 1);
+            persistData();
+            renderPlaylists();
+          }
+        };
+
+        playlistWrapperEl.appendChild(card);
+      });
+    }
+
+    saveQueueBtn.onclick = () => {
+      if (queue.length === 0 && !currentTrack) return alert("目前隊列為空，無法儲存！");
+      const listName = prompt("請輸入新歌單名稱：", `自訂歌單 ${new Date().toLocaleDateString("zh-TW")}`);
+      if (!listName || !listName.trim()) return;
+
+      const songsToSave = [];
+      if (currentTrack) songsToSave.push({ ...currentTrack });
+      queue.forEach(s => songsToSave.push({ ...s }));
+
+      customPlaylists.push({
+        id: "pl_" + Date.now(),
+        name: listName.trim(),
+        description: "由待播清單儲存之歌單",
+        updatedAt: new Date().toISOString().split("T")[0],
+        songs: songsToSave
+      });
+
+      persistData();
+      renderPlaylists();
+      showHUD("💾 歌單儲存成功！");
+    };
+
+    btnCreateEmptyList.onclick = () => {
+      const name = prompt("請輸入新歌單名稱：", "我的最愛");
+      if (!name || !name.trim()) return;
+      customPlaylists.push({
+        id: "pl_" + Date.now(),
+        name: name.trim(),
+        description: "",
+        updatedAt: new Date().toISOString().split("T")[0],
+        songs: []
+      });
+      persistData();
+      renderPlaylists();
+      showHUD("➕ 已建立新歌單");
+    };
+
+    function addSongToSpecificList(song) {
+      if (customPlaylists.length === 0) {
+        customPlaylists.push({ id: "pl_default", name: "預設歌單", description: "", updatedAt: "2026-10-01", songs: [] });
+      }
+
+      const listOptions = customPlaylists.map((pl, idx) => `${idx + 1}. ${pl.name}`).join("\n");
+      const chosen = prompt(`請輸入要加入的歌單編號：\n${listOptions}`, "1");
+      if (!chosen) return;
+
+      const targetIdx = parseInt(chosen, 10) - 1;
+      if (isNaN(targetIdx) || targetIdx < 0 || targetIdx >= customPlaylists.length) return alert("編號無效！");
+
+      customPlaylists[targetIdx].songs.push({
+        id: song.id,
+        title: song.title,
+        timingNote: "",
+        target: "public",
+        message: "",
+        photo: "",
+        completed: false
+      });
+
+      persistData();
+      renderPlaylists();
+      showHUD(`⭐ 已加入: ${customPlaylists[targetIdx].name}`);
+    }
+
+    // ====================================================
+    // N. 編輯與匯出 Modal
+    // ====================================================
+    let tempEditingSongs = [];
+
+    function openEditModal(idx) {
+      activeEditingPlaylistIdx = idx;
+      const list = customPlaylists[idx];
+      editPlName.value = list.name;
+      editPlDesc.value = list.description || "";
+      tempEditingSongs = JSON.parse(JSON.stringify(list.songs));
+      renderEditTrackList();
+      editModal.classList.remove("hidden");
+    }
+
+    function renderEditTrackList() {
+      editTrackList.innerHTML = "";
+      if (tempEditingSongs.length === 0) {
+        editTrackList.innerHTML = `<div style="text-align: center; color: #777; font-size: 0.8rem; padding: 12px;">此歌單內尚無歌曲</div>`;
+        return;
+      }
+
+      tempEditingSongs.forEach((song, sIdx) => {
+        const item = document.createElement("div");
+        item.className = "edit-track-card";
+        item.innerHTML = `
+          <div class="edit-track-top">
+            <span style="color: var(--accent); font-weight: bold; font-size: 0.8rem;">#${sIdx + 1}</span>
+            <input type="text" class="edit-track-title-input" value="${song.title}" data-field="title" />
+            <div class="queue-item-tools">
+              <button class="btn-order" data-dir="-1">▲</button>
+              <button class="btn-order" data-dir="1">▼</button>
+              <button class="remove-btn">✕</button>
+            </div>
+          </div>
+          <textarea rows="2" placeholder="備忘說明或心裡話..." data-field="message">${song.message || ""}</textarea>
+        `;
+
+        item.querySelector('[data-field="title"]').oninput = (e) => { tempEditingSongs[sIdx].title = e.target.value; };
+        item.querySelector('[data-field="message"]').oninput = (e) => { tempEditingSongs[sIdx].message = e.target.value; };
+
+        item.querySelectorAll(".btn-order").forEach(btn => {
+          btn.onclick = () => {
+            const dir = parseInt(btn.dataset.dir, 10);
+            const target = sIdx + dir;
+            if (target < 0 || target >= tempEditingSongs.length) return;
+            const [moved] = tempEditingSongs.splice(sIdx, 1);
+            tempEditingSongs.splice(target, 0, moved);
+            renderEditTrackList();
+          };
+        });
+
+        item.querySelector(".remove-btn").onclick = () => {
+          tempEditingSongs.splice(sIdx, 1);
+          renderEditTrackList();
+        };
+
+        editTrackList.appendChild(item);
+      });
+    }
+
+    editModalSave.onclick = () => {
+      if (activeEditingPlaylistIdx === null) return;
+      const newName = editPlName.value.trim();
+      if (!newName) return alert("名稱不能為空！");
+
+      customPlaylists[activeEditingPlaylistIdx].name = newName;
+      customPlaylists[activeEditingPlaylistIdx].description = editPlDesc.value.trim();
+      customPlaylists[activeEditingPlaylistIdx].songs = tempEditingSongs;
+      customPlaylists[activeEditingPlaylistIdx].updatedAt = new Date().toISOString().split("T")[0];
+
+      persistData();
+      renderPlaylists();
+      editModal.classList.add("hidden");
+      showHUD("💾 歌單已更新！");
+    };
+
+    editModalClose.onclick = () => editModal.classList.add("hidden");
+    editModalCancel.onclick = () => editModal.classList.add("hidden");
+
+    function openExportModal(list) {
+      activeExportingPlaylist = list;
+      currentExportFormat = "md";
+      updateExportView();
+      exportModal.classList.remove("hidden");
+    }
+
+    function updateExportView() {
+      if (!activeExportingPlaylist) return;
+      if (currentExportFormat === "md") {
+        btnSwitchMd.style.borderColor = "var(--accent)";
+        btnSwitchMd.style.color = "var(--accent)";
+        btnSwitchJson.style.borderColor = "#36364e";
+        btnSwitchJson.style.color = "#d1d1e0";
+        exportPreviewArea.value = `# 🎵 ${activeExportingPlaylist.name}\n\n` + 
+          activeExportingPlaylist.songs.map((s, i) => `- [ ] ${i + 1}. ${s.title} (https://youtu.be/${s.id})`).join("\n");
+      } else {
+        btnSwitchJson.style.borderColor = "var(--accent)";
+        btnSwitchJson.style.color = "var(--accent)";
+        btnSwitchMd.style.borderColor = "#36364e";
+        btnSwitchMd.style.color = "#d1d1e0";
+        exportPreviewArea.value = JSON.stringify(activeExportingPlaylist, null, 2);
+      }
+    }
+
+    btnSwitchMd.onclick = () => { currentExportFormat = "md"; updateExportView(); };
+    btnSwitchJson.onclick = () => { currentExportFormat = "json"; updateExportView(); };
+
+    btnCopyExport.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(exportPreviewArea.value);
+        showHUD("📋 已複製到剪貼簿！");
+      } catch (err) {
+        exportPreviewArea.select();
+        document.execCommand("copy");
+        showHUD("📋 已複製！");
+      }
+    };
+
+    btnDownloadExport.onclick = () => {
+      if (!activeExportingPlaylist) return;
+      const content = exportPreviewArea.value;
+      const ext = currentExportFormat === "md" ? "md" : "json";
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${activeExportingPlaylist.name}.${ext}`;
+      a.click();
+      showHUD("💾 檔案已下載！");
+    };
+
+    exportModalClose.onclick = () => exportModal.classList.add("hidden");
+
+    importJsonBtn.onclick = () => {
+      jsonFileInput.value = "";
+      jsonFileInput.click();
+    };
+
+    jsonFileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          customPlaylists.push({
+            id: "pl_" + Date.now(),
+            name: (data.name || "匯入歌單") + " (已匯入)",
+            description: data.description || "",
+            updatedAt: new Date().toISOString().split("T")[0],
+            songs: data.songs || []
+          });
+          persistData();
+          renderPlaylists();
+          showHUD("📥 匯入成功！");
+        } catch (err) {
+          alert(`匯入失敗：${err.message}`);
+        }
+      };
+      reader.readAsText(file);
+    };
+
+    // ====================================================
+    // O. 跑馬燈發送引擎 (雙向連動)
+    // ====================================================
+    function spawnMarquee(text, isLocalSender = true) {
+      const content = text ? text.trim() : "";
+      if (!content) return;
+
+      const bullet = document.createElement("div");
+      bullet.className = "marquee-bullet";
+      bullet.textContent = content;
+
+      const topOffset = MARQUEE_LANES[marqueeLane % MARQUEE_LANES.length];
+      marqueeLane++;
+      bullet.style.top = `${topOffset}%`;
+
+      bullet.addEventListener("animationend", () => bullet.remove());
+      marqueeLayer.appendChild(bullet);
+
+      broadcastToStage("MARQUEE", { text: content });
+
+      // 若是本地發送，廣播到雲端 MQTT 讓大螢幕與其他手機同步浮現
+      if (isLocalSender) {
+        broadcastCloudBullet(content);
+      }
+    }
+
+    marqueeSendBtn.onclick = () => {
+      spawnMarquee(marqueeInput.value, true);
+      marqueeInput.value = "";
+    };
+
+    marqueeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        spawnMarquee(marqueeInput.value, true);
+        marqueeInput.value = "";
+      }
+    });
+
+    document.querySelectorAll(".btn-preset").forEach(btn => {
+      btn.onclick = () => spawnMarquee(btn.dataset.text, true);
+    });
+
+    // ====================================================
+    // P. YouTube 播放器整合 (防呆：有曲目才喚醒 YouTube)
+    // ====================================================
+    window.onYouTubeIframeAPIReady = function () {
+      const playerOptions = {
+        height: "100%",
+        width: "100%",
+        playerVars: {
+          autoplay: 1,
+          controls: 1,
+          rel: 0,
+          playsinline: 1,
+          enablejsapi: 1
+        },
+        events: {
+          onReady: () => { 
+            isPlayerReady = true; 
+            if (currentTrack) {
+              activatePlayer(currentTrack.id);
+            }
+          },
+          onStateChange: (event) => {
+            if (event.data === YT.PlayerState.ENDED) playNextTrack();
+          },
+          onError: () => {
+            showHUD("⚠️ 該曲版權限制嵌入，自動切歌");
+            setTimeout(playNextTrack, 1500);
+          }
+        }
+      };
+
+      if (isStageRole) {
+        const stageOpts = { ...playerOptions };
+        stageOpts.events.onReady = () => { isStagePlayerReady = true; };
+        stagePlayer = new YT.Player("stage-yt-player", stageOpts);
+      } else {
+        // 先建立實體，若未點歌先維持黑膠動畫隱藏 iframe
+        player = new YT.Player("yt-player", playerOptions);
+      }
+    };
+
+    function activatePlayer(videoId) {
+      if (standbyDisplay) standbyDisplay.classList.add("hidden");
+      if (ytPlayerEl) ytPlayerEl.classList.remove("hidden");
+      if (player && typeof player.loadVideoById === "function") {
+        player.loadVideoById(videoId);
+      }
+    }
+
+    function deactivatePlayer() {
+      if (standbyDisplay) standbyDisplay.classList.remove("hidden");
+      if (ytPlayerEl) ytPlayerEl.classList.add("hidden");
+      if (player && typeof player.stopVideo === "function") {
+        player.stopVideo();
+      }
+    }
+
+    function updateShowcase(track, shouldBroadcast = true) {
+      if (!track) {
+        showcaseHeading.textContent = "尚未開始播放";
+        badgeTiming.textContent = "📌 待命起播";
+        badgeTarget.textContent = "🌐 公開點播";
+        showcasePromptBox.textContent = "「請在上方搜尋點歌，這裡將同步展現相片或說明...」";
+        showcaseImg.classList.add("hidden");
+        showcasePlaceholder.classList.remove("hidden");
+        return;
+      }
+
+      showcaseHeading.textContent = track.title;
+      badgeTiming.textContent = track.timingNote ? `📌 ${track.timingNote}` : "📌 播放中";
+      badgeTarget.textContent = "🌐 點播曲目";
+      showcasePromptBox.textContent = track.message ? track.message : "（無特別備忘留言）";
+
+      if (track.photo) {
+        showcaseImg.src = track.photo;
+        showcaseImg.classList.remove("hidden");
+        showcasePlaceholder.classList.add("hidden");
+      } else {
+        showcaseImg.classList.add("hidden");
+        showcasePlaceholder.classList.remove("hidden");
+      }
+
+      broadcastToStage("SYNC_TRACK", { track });
+      if (shouldBroadcast) {
+        broadcastCloudSync(track);
+      }
+    }
+
+    function playNextTrack() {
+      if (currentTrack) {
+        const playedAt = new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+        historyList.unshift({ ...currentTrack, playedAt });
+        if (historyList.length > 25) historyList.pop();
+        renderHistory();
+      }
+
+      if (queue.length === 0) {
+        currentTrack = null;
+        deactivatePlayer();
+        updateShowcase(null);
+        persistData();
+        renderQueue();
+        updateKtvOverlay();
+        return;
+      }
+
+      currentTrack = queue.shift();
+      updateShowcase(currentTrack);
+      persistData();
+      renderQueue();
+      updateKtvOverlay();
+
+      if (isPlayerReady && player) {
+        activatePlayer(currentTrack.id);
+      }
+    }
+
+    function extractVideoId(text) {
+      const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
+      const match = text.match(regExp);
+      return match ? match[1] : (text.length === 11 ? text : null);
+    }
+
+    function enqueueSong(song, isPriority = false) {
+      if (isPriority) {
+        queue.unshift(song);
+        showHUD("⚡ 已優先插播");
+      } else {
+        queue.push(song);
+        showHUD("➕ 已加入待播");
+      }
+      persistData();
+      renderQueue();
+      updateKtvOverlay();
+      if (!currentTrack) playNextTrack();
+    }
+
+    function removeSong(index) {
+      queue.splice(index, 1);
+      persistData();
+      renderQueue();
+      updateKtvOverlay();
+    }
+
+    function moveSong(index, direction) {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= queue.length) return;
+      const [song] = queue.splice(index, 1);
+      queue.splice(targetIndex, 0, song);
+      persistData();
+      renderQueue();
+      updateKtvOverlay();
+    }
+
+    // ====================================================
+    // Q. 搜尋引擎 (含暗號攔截)
+    // ====================================================
+    const SEARCH_ENDPOINTS = [
+      { url: (q) => `https://api.piped.private.coffee/search?q=${encodeURIComponent(q)}&filter=videos`, type: 'piped' },
+      { url: (q) => `https://pipedapi.tokhmi.xyz/search?q=${encodeURIComponent(q)}&filter=videos`, type: 'piped' },
+      { url: (q) => `https://inv.nadeko.net/api/v1/search?q=${encodeURIComponent(q)}&type=video`, type: 'invidious' },
+      { url: (q) => `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.piped.private.coffee/search?q=${encodeURIComponent(q)}&filter=videos`)}`, type: 'piped' }
+    ];
+
+    async function searchSongs(query) {
+      const trimmed = query.trim();
+      if (!trimmed) {
+        searchResults.classList.add("hidden");
+        searchResults.innerHTML = "";
+        return;
+      }
+
+      if (checkSearchCipher(trimmed)) return;
+
+      const directId = extractVideoId(trimmed);
+      if (directId) {
+        const dummySong = { id: directId, title: `點播 (${directId})`, photo: "", timingNote: "", target: "public", message: "" };
+        searchResults.innerHTML = `
+          <div class="search-item">
+            <div class="search-item-info">
+              <div class="search-item-title">YouTube 直連影片 (${directId})</div>
+            </div>
+            <div class="search-item-actions">
+              <button class="btn-queue" id="direct-queue">點歌</button>
+              <button class="btn-insert" id="direct-insert">插播</button>
+              <button class="btn-add-list" id="direct-add-list">+歌單</button>
+            </div>
+          </div>
+        `;
+        document.getElementById("direct-queue").onclick = () => { enqueueSong(dummySong, false); closeSearch(); };
+        document.getElementById("direct-insert").onclick = () => { enqueueSong(dummySong, true); closeSearch(); };
+        document.getElementById("direct-add-list").onclick = () => { addSongToSpecificList(dummySong); closeSearch(); };
+        searchResults.classList.remove("hidden");
+        return;
+      }
+
+      searchSpinner.classList.remove("hidden");
+      let success = false;
+
+      for (const endpoint of SEARCH_ENDPOINTS) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
+          const res = await fetch(endpoint.url(trimmed), { signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) continue;
+
+          const data = await res.json();
+          let items = [];
+
+          if (endpoint.type === 'piped' && Array.isArray(data.items)) {
+            items = data.items.slice(0, 5).map(item => ({
+              id: item.url.replace('/watch?v=', ''),
+              title: item.title,
+              channel: item.uploaderName || "未知歌手",
+              thumbnail: item.thumbnail,
+              photo: "", timingNote: "", target: "public", message: ""
+            }));
+          } else if (endpoint.type === 'invidious' && Array.isArray(data)) {
+            items = data.slice(0, 5).map(item => ({
+              id: item.videoId,
+              title: item.title,
+              channel: item.author || "未知歌手",
+              thumbnail: item.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`,
+              photo: "", timingNote: "", target: "public", message: ""
+            }));
+          }
+
+          if (items.length > 0) {
+            renderSearchResults(items);
+            success = true;
+            break;
+          }
+        } catch (err) {
+          console.warn("節點重試...", err.message);
+        }
+      }
+
+      searchSpinner.classList.add("hidden");
+      if (!success) {
+        searchResults.innerHTML = `<div style="padding: 14px; text-align: center; color: #ff6b6b; font-size: 0.8rem;">搜尋繁忙，可直接在上方貼上 YouTube 網址！</div>`;
+        searchResults.classList.remove("hidden");
+      }
+    }
+
+    function renderSearchResults(items) {
+      searchResults.innerHTML = "";
+      items.forEach(song => {
+        const row = document.createElement("div");
+        row.className = "search-item";
+        row.innerHTML = `
+          <img src="${song.thumbnail}" alt="thumb" />
+          <div class="search-item-info">
+            <div class="search-item-title" title="${song.title}">${song.title}</div>
+            <div class="search-item-channel">${song.channel}</div>
+          </div>
+          <div class="search-item-actions">
+            <button class="btn-queue">點歌</button>
+            <button class="btn-insert">插播</button>
+            <button class="btn-add-list">+歌單</button>
+          </div>
+        `;
+        row.querySelector(".btn-queue").onclick = () => { enqueueSong({ ...song }, false); closeSearch(); };
+        row.querySelector(".btn-insert").onclick = () => { enqueueSong({ ...song }, true); closeSearch(); };
+        row.querySelector(".btn-add-list").onclick = () => { addSongToSpecificList({ ...song }); closeSearch(); };
+        searchResults.appendChild(row);
+      });
+      searchResults.classList.remove("hidden");
+    }
+
+    function closeSearch() {
+      searchInput.value = "";
+      searchResults.classList.add("hidden");
+      searchResults.innerHTML = "";
+    }
+
+    function debounce(fn, delay = 450) {
+      let timer = null;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+
+    searchInput.addEventListener("input", debounce((e) => searchSongs(e.target.value), 450));
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        if (checkSearchCipher(searchInput.value)) {
+          e.preventDefault();
+        }
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+        searchResults.classList.add("hidden");
+      }
+    });
+
+    // ====================================================
+    // R. 待播清單渲染
+    // ====================================================
+    function renderQueue() {
+      queueCountEl.textContent = queue.length;
+      queueListEl.innerHTML = "";
+
+      if (queue.length === 0) {
+        queueListEl.innerHTML = `<li style="padding: 16px; text-align: center; color: #666; font-size: 0.85rem;">待播清單中無歌曲</li>`;
+        return;
+      }
+
+      queue.forEach((song, index) => {
+        const li = document.createElement("li");
+        li.className = `queue-item ${song.completed ? 'completed' : ''}`;
+        li.dataset.index = index;
+
+        if (!isGuestMode) {
+          li.setAttribute("draggable", "true");
+          li.addEventListener("dragstart", handleDragStart);
+          li.addEventListener("dragover", handleDragOver);
+          li.addEventListener("dragleave", handleDragLeave);
+          li.addEventListener("drop", handleDrop);
+          li.addEventListener("dragend", handleDragEnd);
+        }
+
+        li.innerHTML = `
+          <span class="drag-handle admin-only" title="長按拖曳">⋮⋮</span>
+          <div class="song-info" style="cursor: pointer;">
+            <span style="color: var(--accent); margin-right: 6px; font-weight: bold;">#${index + 1}</span>
+            <span>${song.title}</span>
+          </div>
+          <div class="queue-item-tools admin-only">
+            <button class="btn-order" data-dir="-1" title="上移">▲</button>
+            <button class="btn-order" data-dir="1" title="下移">▼</button>
+            <button class="remove-btn" title="刪除">✕</button>
+          </div>
+        `;
+
+        li.querySelector(".song-info").onclick = () => {
+          updateShowcase(song);
+          showHUD(`📖 查看：${song.title}`);
+        };
+
+        if (!isGuestMode) {
+          li.querySelectorAll(".btn-order").forEach(btn => {
+            btn.onclick = (e) => { e.stopPropagation(); moveSong(index, parseInt(btn.dataset.dir, 10)); };
+          });
+          li.querySelector(".remove-btn").onclick = (e) => { e.stopPropagation(); removeSong(index); };
+        }
+
+        queueListEl.appendChild(li);
+      });
+    }
+
+    function handleDragStart(e) { draggedItemIndex = parseInt(this.dataset.index, 10); this.classList.add("dragging"); }
+    function handleDragOver(e) { e.preventDefault(); this.classList.add("drag-over"); }
+    function handleDragLeave() { this.classList.remove("drag-over"); }
+    function handleDrop(e) {
+      e.preventDefault();
+      this.classList.remove("drag-over");
+      const targetIndex = parseInt(this.dataset.index, 10);
+      if (draggedItemIndex === null || draggedItemIndex === targetIndex) return;
+      const [moved] = queue.splice(draggedItemIndex, 1);
+      queue.splice(targetIndex, 0, moved);
+      persistData();
+      renderQueue();
+      updateKtvOverlay();
+    }
+    function handleDragEnd() {
+      this.classList.remove("dragging");
+      document.querySelectorAll(".queue-item").forEach(item => item.classList.remove("drag-over"));
+      draggedItemIndex = null;
+    }
+
+    // ====================================================
+    // S. 歷史紀錄
+    // ====================================================
+    function renderHistory() {
+      historyCountEl.textContent = historyList.length;
+      historyListEl.innerHTML = "";
+      if (historyList.length === 0) {
+        historyListEl.innerHTML = `<li style="padding: 16px; text-align: center; color: #666; font-size: 0.85rem;">尚無點唱紀錄</li>`;
+        return;
+      }
+      historyList.forEach((song) => {
+        const li = document.createElement("li");
+        li.className = "history-item";
+        li.innerHTML = `
+          <div class="song-info">
+            <span>${song.title}</span>
+            <span class="history-time">${song.playedAt || ""}</span>
+          </div>
+          <div class="search-item-actions">
+            <button class="btn-queue" style="padding: 4px 7px; font-size: 0.72rem;">重播</button>
+            <button class="btn-insert" style="padding: 4px 7px; font-size: 0.72rem;">插播</button>
+          </div>
+        `;
+        li.querySelector(".btn-queue").onclick = () => enqueueSong({ ...song }, false);
+        li.querySelector(".btn-insert").onclick = () => enqueueSong({ ...song }, true);
+        historyListEl.appendChild(li);
+      });
+    }
+
+    function switchTab(activeTab) {
+      [tabQueueBtn, tabPlaylistBtn, tabHistoryBtn].forEach(btn => btn.classList.remove("active"));
+      [queueTabPanel, playlistTabPanel, historyTabPanel].forEach(panel => panel.classList.remove("active"));
+      clearHistoryBtn.classList.add("hidden");
+
+      if (activeTab === "queue") {
+        tabQueueBtn.classList.add("active");
+        queueTabPanel.classList.add("active");
+      } else if (activeTab === "playlist") {
+        tabPlaylistBtn.classList.add("active");
+        playlistTabPanel.classList.add("active");
+      } else if (activeTab === "history") {
+        tabHistoryBtn.classList.add("active");
+        historyTabPanel.classList.add("active");
+        clearHistoryBtn.classList.remove("hidden");
+      }
+    }
+
+    tabQueueBtn.onclick = () => switchTab("queue");
+    tabPlaylistBtn.onclick = () => switchTab("playlist");
+    tabHistoryBtn.onclick = () => switchTab("history");
+
+    clearHistoryBtn.onclick = () => {
+      if (confirm("確定要清空歷史紀錄嗎？")) {
+        historyList = [];
+        persistData();
+        renderHistory();
+      }
+    };
+
+    skipBtn.onclick = playNextTrack;
+
+    // ====================================================
+    // T. HUD 與全螢幕
+    // ====================================================
+    function showHUD(text) {
+      clearTimeout(hudTimer);
+      hudToast.textContent = text;
+      hudToast.classList.remove("hidden");
+      hudToast.style.opacity = "1";
+      hudTimer = setTimeout(() => {
+        hudToast.style.opacity = "0";
+        setTimeout(() => hudToast.classList.add("hidden"), 250);
+      }, 850);
+    }
+
+    function updateKtvOverlay() {
+      ktvNowTitle.textContent = currentTrack ? `▶ ${currentTrack.title}` : "待播清單已空";
+      ktvNextUp.textContent = queue.length > 0 ? `下一首：${queue[0].title}` : "下一首：無";
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        ktvStage.requestFullscreen().catch(err => alert(`無法進入全螢幕：${err.message}`));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    fullscreenBtn.onclick = toggleFullscreen;
+
+    document.addEventListener("fullscreenchange", () => {
+      fullscreenBtn.textContent = document.fullscreenElement ? "✕ 離開" : "⛶ 全螢幕";
+      if (document.fullscreenElement) showHUD("🖥️ 全螢幕投影模式");
+    });
+
+    // ====================================================
+    // U. 鍵盤快捷鍵 (含老闆防窺鍵 Esc)
+    // ====================================================
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (isStealthUnlocked) {
+          toggleStealthMode(false);
+          return;
+        }
+      }
+
+      const activeTag = document.activeElement ? document.activeElement.tagName : "";
+      if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") return;
+      if (!player || !isPlayerReady) return;
+
+      switch (e.code) {
+        case "Space":
+          e.preventDefault();
+          if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+            player.pauseVideo();
+            broadcastToStage("PLAYER_COMMAND", { command: "pause" });
+            showHUD("⏸ 暫停");
+          } else {
+            player.playVideo();
+            broadcastToStage("PLAYER_COMMAND", { command: "play" });
+            showHUD("▶ 播放");
+          }
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          showHUD("⏭ 切歌");
+          playNextTrack();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
+          showHUD("⏪ 倒退 10 秒");
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          const volUp = Math.min(100, player.getVolume() + 5);
+          player.setVolume(volUp);
+          showHUD(`🔊 音量 ${volUp}%`);
+          broadcastToStage("PLAYER_COMMAND", { command: "volume", value: volUp });
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          const volDown = Math.max(0, player.getVolume() - 5);
+          player.setVolume(volDown);
+          showHUD(`🔉 音量 ${volDown}%`);
+          broadcastToStage("PLAYER_COMMAND", { command: "volume", value: volDown });
+          break;
+        case "KeyM":
+          if (player.isMuted()) { player.unMute(); showHUD("🔊 解除靜音"); }
+          else { player.mute(); showHUD("🔇 靜音"); }
+          break;
+        case "KeyF":
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+      }
+    });
+
+    loadSavedData();
+  </script>
+</body>
+</html>
