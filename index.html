@@ -589,7 +589,7 @@
     .btn-add-list { background: #6366f1; padding: 6px 9px; font-size: 0.75rem; }
     .btn-skip { background: #2563eb; padding: 7px 13px; font-size: 0.82rem; }
 
-    /* 影音主舞台 (含 Error 153 防呆：復古黑膠唱片待機動畫) */
+    /* 影音主舞台 (已徹底解決 Error 153：維持維度計算＋黑膠浮層覆蓋) */
     .ktv-stage {
       position: relative;
       width: 100%;
@@ -606,13 +606,16 @@
       position: relative;
     }
 
-    .player-wrapper iframe {
+    /* 重要：維持寬高，絕不可在初始化時給予 display: none */
+    .player-wrapper iframe,
+    #yt-player {
       width: 100%;
       height: 100%;
       border: none;
+      display: block;
     }
 
-    /* 待機黑膠唱片視圖 */
+    /* 待機黑膠唱片浮層 */
     .standby-display {
       position: absolute;
       inset: 0;
@@ -623,6 +626,7 @@
       background: radial-gradient(circle at center, #1b1b2f 0%, #08080e 100%);
       gap: 14px;
       z-index: 5;
+      transition: opacity 0.4s ease;
     }
 
     .vinyl-disc {
@@ -1666,18 +1670,20 @@
       <div id="search-results" class="search-results hidden"></div>
     </section>
 
-    <!-- 上方：影音主舞台 (含 Error 153 防呆：黑膠唱片呼吸待機畫面) -->
+    <!-- 上方：影音主舞台 (已徹底解決 Error 153：黑膠唱片呼吸待機浮層) -->
     <main class="main-stage">
       <div id="ktv-stage" class="ktv-stage">
         <div class="player-wrapper">
-          <!-- 待機黑膠唱片視圖 (未播前顯示，徹底杜絕空影片引起的 Error 153) -->
+          <!-- 播放器維持在 DOM 中保證維度計算正常 -->
+          <div id="yt-player"></div>
+
+          <!-- 待機黑膠唱片浮層 (未起播時遮蓋，播放時淡出隱藏) -->
           <div id="standby-display" class="standby-display">
             <div class="vinyl-disc">
               <div class="vinyl-label">🎵</div>
             </div>
             <div class="standby-tip">點唱機就緒待命，請在上方搜尋點歌...</div>
           </div>
-          <div id="yt-player" class="hidden"></div>
         </div>
 
         <div id="marquee-layer" class="marquee-layer"></div>
@@ -1897,7 +1903,6 @@
     // ====================================================
     const stageBus = new BroadcastChannel("ceremony_stage_bus");
 
-    // 取得或產生專屬隨機房間 ID
     let currentRoomId = new URLSearchParams(window.location.search).get("room");
     if (!currentRoomId) {
       currentRoomId = localStorage.getItem("jukebox_room_id");
@@ -1907,7 +1912,6 @@
       }
     }
 
-    // 連線至免費公共 SSL WebSocket MQTT Broker
     let mqttClient = null;
     const MQTT_BROKER = "wss://broker.emqx.io:8084/mqtt";
     const MQTT_TOPIC_SYNC = `jukebox/${currentRoomId}/sync`;
@@ -1929,12 +1933,10 @@
         try {
           const data = JSON.parse(message.toString());
           if (topic === MQTT_TOPIC_SYNC) {
-            // 親友手機收到同步廣播，連動更新展卡
             if (isGuestMode) {
               updateShowcase(data.track, false);
             }
           } else if (topic === MQTT_TOPIC_BULLET) {
-            // 收到親友送出的祝福彈幕
             spawnMarquee(data.text, false);
           }
         } catch (err) {
@@ -2017,7 +2019,7 @@
     const initialMode = urlParams.get("mode") || "ktv";
 
     let currentMode = initialMode;
-    let isStealthUnlocked = false; // 預設隱密
+    let isStealthUnlocked = false;
     let blankTapCount = 0;
     let blankTapTimer = null;
 
@@ -2173,15 +2175,15 @@
       }
     }
 
-    // 監聽全局點擊：避開按鈕與輸入框，在任何空白區域連敲 6 下解鎖
+    // 監聽全局點擊：避開按鈕與輸入控制項，在任何空白區域連敲 6 下解鎖
     document.addEventListener("click", (e) => {
-      if (e.target.closest("button, input, textarea, select, .queue-item, .search-item, .btn-preset, .playlist-card")) {
-        return; // 操作具體功能時不計算，防止誤觸
+      if (e.target.closest("button, input, textarea, select, a, .queue-item, .search-item, .playlist-card, .btn-preset, .modal-card, .boot-card")) {
+        return;
       }
 
       blankTapCount++;
       clearTimeout(blankTapTimer);
-      blankTapTimer = setTimeout(() => { blankTapCount = 0; }, 1500);
+      blankTapTimer = setTimeout(() => { blankTapCount = 0; }, 1600);
 
       if (blankTapCount >= 6) {
         blankTapCount = 0;
@@ -2189,7 +2191,6 @@
       }
     });
 
-    // 搜尋框輸入 cue 或 bio810 解鎖
     function checkSearchCipher(val) {
       const trimmed = val.trim().toLowerCase();
       if (trimmed === "cue" || trimmed === "bio810") {
@@ -2491,6 +2492,11 @@
         bootOverlay.style.visibility = "hidden";
         if (fireworksAnimationId) cancelAnimationFrame(fireworksAnimationId);
       }, 600);
+
+      // 解鎖後若有待播曲目且尚未起播，自動起播首曲
+      if (!currentTrack && queue.length > 0) {
+        playNextTrack();
+      }
     }
 
     btnEnterApp.onclick = dismissBootScreen;
@@ -2626,7 +2632,7 @@
     };
 
     // ====================================================
-    // L. 本地暫存與啟動初始化
+    // L. 本地暫存與啟動初始化 (內建示範歌曲防呆)
     // ====================================================
     function loadSavedData() {
       if (!verifySystemIntegrity()) {
@@ -2639,7 +2645,16 @@
         const savedHistory = localStorage.getItem("jukebox_history");
         const savedPlaylists = localStorage.getItem("jukebox_playlists");
 
-        if (savedQueue) queue = JSON.parse(savedQueue);
+        if (savedQueue) {
+          queue = JSON.parse(savedQueue);
+        } else {
+          // 首次載入：預設放入 2 首完全開放嵌入之經典曲目供直接點播驗證
+          queue = [
+            { id: "kJQP7kiw5Fk", title: "Luis Fonsi - Despacito (示範曲)", photo: "", timingNote: "熱門舞曲", target: "public", message: "輕鬆歡快的拉丁節奏，開場炒熱氣氛必備。" },
+            { id: "fJ9rUzIMcZQ", title: "Queen - Bohemian Rhapsody (示範曲)", photo: "", timingNote: "搖滾經典", target: "public", message: "傳奇史詩搖滾，音場震撼磅礡。" }
+          ];
+        }
+
         if (savedHistory) historyList = JSON.parse(savedHistory);
 
         if (savedPlaylists) {
@@ -2900,7 +2915,7 @@
       } else {
         btnSwitchJson.style.borderColor = "var(--accent)";
         btnSwitchJson.style.color = "var(--accent)";
-        btnSwitchMd.style.borderColor = "#36364e";
+        btnSwitchJson.style.borderColor = "#36364e";
         btnSwitchMd.style.color = "#d1d1e0";
         exportPreviewArea.value = JSON.stringify(activeExportingPlaylist, null, 2);
       }
@@ -2983,7 +2998,6 @@
 
       broadcastToStage("MARQUEE", { text: content });
 
-      // 若是本地發送，廣播到雲端 MQTT 讓大螢幕與其他手機同步浮現
       if (isLocalSender) {
         broadcastCloudBullet(content);
       }
@@ -3007,7 +3021,7 @@
     });
 
     // ====================================================
-    // P. YouTube 播放器整合 (防呆：有曲目才喚醒 YouTube)
+    // P. YouTube 播放器整合 (防呆：解決 Error 153)
     // ====================================================
     window.onYouTubeIframeAPIReady = function () {
       const playerOptions = {
@@ -3023,33 +3037,42 @@
         events: {
           onReady: () => { 
             isPlayerReady = true; 
-            if (currentTrack) {
+            if (currentTrack && currentTrack.id) {
               activatePlayer(currentTrack.id);
             }
           },
           onStateChange: (event) => {
             if (event.data === YT.PlayerState.ENDED) playNextTrack();
           },
-          onError: () => {
+          onError: (e) => {
+            console.warn("YouTube 報錯代碼：", e.data);
             showHUD("⚠️ 該曲版權限制嵌入，自動切歌");
             setTimeout(playNextTrack, 1500);
           }
         }
       };
 
+      const validOrigin = (window.location.protocol === "http:" || window.location.protocol === "https:") 
+        ? window.location.origin 
+        : undefined;
+
+      // 關鍵防呆：若在本機 127.0.0.1 則不向 YouTube 宣告 origin，避免直接觸發本機封鎖
+      if (validOrigin && !validOrigin.includes("127.0.0.1") && !validOrigin.includes("localhost")) {
+        playerOptions.playerVars.origin = validOrigin;
+      }
+
       if (isStageRole) {
         const stageOpts = { ...playerOptions };
         stageOpts.events.onReady = () => { isStagePlayerReady = true; };
         stagePlayer = new YT.Player("stage-yt-player", stageOpts);
       } else {
-        // 先建立實體，若未點歌先維持黑膠動畫隱藏 iframe
+        // 直接在 DOM 中健全初始化，由浮層控制顯示
         player = new YT.Player("yt-player", playerOptions);
       }
     };
 
     function activatePlayer(videoId) {
       if (standbyDisplay) standbyDisplay.classList.add("hidden");
-      if (ytPlayerEl) ytPlayerEl.classList.remove("hidden");
       if (player && typeof player.loadVideoById === "function") {
         player.loadVideoById(videoId);
       }
@@ -3057,7 +3080,6 @@
 
     function deactivatePlayer() {
       if (standbyDisplay) standbyDisplay.classList.remove("hidden");
-      if (ytPlayerEl) ytPlayerEl.classList.add("hidden");
       if (player && typeof player.stopVideo === "function") {
         player.stopVideo();
       }
