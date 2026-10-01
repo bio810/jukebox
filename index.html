@@ -198,9 +198,20 @@
       color: var(--success);
       font-size: 0.75rem;
       font-weight: 600;
-      padding: 3px 12px;
-      border-radius: 12px;
+      padding: 4px 12px;
+      border-radius: 14px;
     }
+
+    .btn-exit-guest {
+      background: transparent;
+      border: none;
+      color: #aaa;
+      font-size: 0.72rem;
+      cursor: pointer;
+      margin-left: 6px;
+      padding: 2px 4px;
+    }
+    .btn-exit-guest:hover { color: var(--danger); }
 
     body.is-guest .admin-only {
       display: none !important;
@@ -687,6 +698,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      cursor: pointer;
     }
 
     .btn-fullscreen {
@@ -1649,6 +1661,7 @@
       <div id="guest-indicator" class="guest-badge hidden">
         <span id="mqtt-status-dot" style="font-size: 0.7rem;">🟡</span>
         <span id="guest-indicator-text">親友專屬同步展台</span>
+        <button id="btn-exit-guest" class="btn-exit-guest stealth-element" title="清除訪客快取，回歸主機身分">✕ 退出訪客</button>
       </div>
     </header>
 
@@ -1931,16 +1944,33 @@
     }
 
     // ====================================================
-    // B. 免伺服器跨手機 MQTT 雲端總線整合 (強化連線與心跳同步)
+    // B. 訪客身分永久記憶與防呆通道 (核心修復)
     // ====================================================
     const stageBus = new BroadcastChannel("ceremony_stage_bus");
+    const urlParams = new URLSearchParams(window.location.search);
 
-    let currentRoomId = new URLSearchParams(window.location.search).get("room");
-    if (!currentRoomId) {
-      currentRoomId = localStorage.getItem("jukebox_room_id");
+    // 關鍵判斷：優先吃 URL 參數，若 URL 參數被洗掉，吃 localStorage 紀錄
+    let isGuestMode = urlParams.get("guest") === "true" || localStorage.getItem("jukebox_is_guest") === "true";
+    let currentRoomId = urlParams.get("room") || localStorage.getItem("jukebox_guest_room");
+
+    // 若本次 URL 明確帶有 guest=true，立刻加固寫入快取
+    if (urlParams.get("guest") === "true") {
+      isGuestMode = true;
+      localStorage.setItem("jukebox_is_guest", "true");
+      if (urlParams.get("room")) {
+        currentRoomId = urlParams.get("room");
+        localStorage.setItem("jukebox_guest_room", currentRoomId);
+      }
+    }
+
+    // 若不是訪客，且沒有指定房號，則為「主控端」，生成或讀取主控房號
+    if (!isGuestMode) {
       if (!currentRoomId) {
-        currentRoomId = "cwc_" + Math.floor(1000 + Math.random() * 9000);
-        localStorage.setItem("jukebox_room_id", currentRoomId);
+        currentRoomId = localStorage.getItem("jukebox_host_room");
+        if (!currentRoomId) {
+          currentRoomId = "cwc_" + Math.floor(1000 + Math.random() * 9000);
+          localStorage.setItem("jukebox_host_room", currentRoomId);
+        }
       }
     }
 
@@ -1980,25 +2010,23 @@
         try {
           const data = JSON.parse(message.toString());
           if (topic === MQTT_TOPIC_SYNC) {
-            // 親友手機收到同步：更新文字＋以靜音策略喚醒播放器
             if (isGuestMode && data.track) {
               const isDifferentTrack = !currentTrack || currentTrack.id !== data.track.id;
               currentTrack = data.track;
               updateShowcase(data.track, false);
 
+              // 影音同步：若播放器已就緒直接播，未就緒則由 onReady 攔截
               if (isDifferentTrack) {
                 syncPlayGuestTrack(data.track.id, data.currentTime || 0);
               }
             }
           } else if (topic === MQTT_TOPIC_CMD) {
-            // 收到主控端的播放/暫停/跳轉指令
             if (isGuestMode && player && isPlayerReady) {
               if (data.command === "play") player.playVideo();
               if (data.command === "pause") player.pauseVideo();
               if (data.command === "seek" && data.time) player.seekTo(data.time, true);
             }
           } else if (topic === MQTT_TOPIC_REQ) {
-            // 主控端收到進度索取，立即回傳當前曲目與播放秒數
             if (!isGuestMode && currentTrack) {
               const currSec = (player && isPlayerReady && typeof player.getCurrentTime === "function") 
                 ? player.getCurrentTime() : 0;
@@ -2033,7 +2061,7 @@
       }
     }
 
-    // 主控端心跳定時廣播 (每 3 秒自動同步當前秒數，確保新加入的手機零等待)
+    // 主控端心跳定時廣播 (每 3 秒自動同步一次)
     setInterval(() => {
       if (!isGuestMode && currentTrack && player && isPlayerReady) {
         const currSec = player.getCurrentTime();
@@ -2046,7 +2074,7 @@
       activatePlayer(videoId);
       if (player && isPlayerReady) {
         try {
-          player.mute(); // 關鍵：靜音狀態下瀏覽器必定允許自動起播
+          player.mute();
           player.loadVideoById({ videoId: videoId, startSeconds: startSeconds });
           player.playVideo();
           if (guestSoundBar) guestSoundBar.classList.remove("hidden");
@@ -2062,6 +2090,15 @@
         player.setVolume(100);
         guestSoundBar.classList.add("hidden");
         showHUD("🔊 已開啟手機同步聲音！");
+      }
+    };
+
+    // 退出訪客快取，回歸主機身分
+    document.getElementById("btn-exit-guest").onclick = () => {
+      if (confirm("確定要清除手機上的訪客快取，並將此裝置重設為主控端嗎？")) {
+        localStorage.removeItem("jukebox_is_guest");
+        localStorage.removeItem("jukebox_guest_room");
+        window.location.href = window.location.pathname;
       }
     };
 
@@ -2556,14 +2593,19 @@
     };
 
     // ====================================================
-    // J. 開機驗證與模式解鎖
+    // J. 開機驗證與模式解鎖 (永久記憶訪客身分直通)
     // ====================================================
     if (isGuestMode) {
       document.body.classList.add("is-guest");
-      bootOverlay.style.display = "none";
-      guestIndicator.classList.remove("hidden");
-      guestIndicatorText.textContent = `親友專屬同步展台 (房號: ${currentRoomId})`;
-      headerDesc.textContent = `掌心即時同步閱讀照片與說明，下方可即時向大螢幕發送彈幕祝福！`;
+      // 關鍵：訪客絕對隱藏並跳過密碼鎖定
+      if (bootOverlay) {
+        bootOverlay.style.display = "none";
+        bootOverlay.style.visibility = "hidden";
+        bootOverlay.style.opacity = "0";
+      }
+      if (guestIndicator) guestIndicator.classList.remove("hidden");
+      if (guestIndicatorText) guestIndicatorText.textContent = `親友專屬同步展台 (房號: ${currentRoomId || '連線中'})`;
+      if (headerDesc) headerDesc.textContent = `掌心即時同步閱讀照片與說明，下方可即時向大螢幕發送彈幕祝福！`;
     }
 
     function checkPassword() {
@@ -2680,7 +2722,7 @@
     }
 
     // ====================================================
-    // K. QR Code 產生
+    // K. QR Code 產生 (含專屬 MQTT 同步房號)
     // ====================================================
     function generateGuestQRCode() {
       const currentUrl = new URL(window.location.href);
@@ -3017,7 +3059,7 @@
       } else {
         btnSwitchJson.style.borderColor = "var(--accent)";
         btnSwitchJson.style.color = "var(--accent)";
-        btnSwitchMd.style.borderColor = "#36364e";
+        btnSwitchJson.style.borderColor = "#36364e";
         btnSwitchMd.style.color = "#d1d1e0";
         exportPreviewArea.value = JSON.stringify(activeExportingPlaylist, null, 2);
       }
@@ -3139,8 +3181,13 @@
         events: {
           onReady: () => { 
             isPlayerReady = true; 
+            // 解決時間差：若在播放器初始化完成前已收到同步歌曲，立刻起播
             if (currentTrack && currentTrack.id) {
-              activatePlayer(currentTrack.id);
+              if (isGuestMode) {
+                syncPlayGuestTrack(currentTrack.id, 0);
+              } else {
+                activatePlayer(currentTrack.id);
+              }
             }
           },
           onStateChange: (event) => {
